@@ -93,6 +93,7 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
   e.preventDefault();
   const content = document.getElementById('content').value;
   const imageStyle = document.getElementById('image-style').value;
+  const captionStyle = document.getElementById('caption-style').value;
   const result = document.getElementById('create-result');
 
   result.innerHTML = '⏳ Создаю сценарий...';
@@ -101,7 +102,7 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
     const res = await fetch('/api/scenarios', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, image_style: imageStyle }),
+      body: JSON.stringify({ content, image_style: imageStyle, caption_style: captionStyle }),
     });
     const data = await res.json();
     if (data.ok) {

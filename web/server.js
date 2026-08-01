@@ -67,14 +67,14 @@ app.get('/api/scenarios', (req, res) => {
 
 // API: создать сценарий
 app.post('/api/scenarios', async (req, res) => {
-  const { content, image_style } = req.body;
+  const { content, image_style, caption_style } = req.body;
   if (!content) return res.status(400).json({ error: 'content required' });
 
   const { exec } = await import('child_process');
   const { promisify } = await import('util');
   const execAsync = promisify(exec);
 
-  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify --image-style ${image_style || 'comic'} `;
+  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify --image-style ${image_style || 'comic'} --style ${caption_style || 'bubble'} `;
   if (content.startsWith('http://') || content.startsWith('https://')) {
     if (content.includes('youtube.com') || content.includes('youtu.be')) {
       cmd += `--youtube ${JSON.stringify(content)}`;

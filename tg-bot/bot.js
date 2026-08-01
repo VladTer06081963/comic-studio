@@ -185,6 +185,24 @@ const IMAGE_STYLE_EMOJI = {
   watercolor: '🎨',
 };
 
+const CAPTION_STYLE_BUTTONS = [
+  [Markup.button.callback('💬 Bubble', 'caption_bubble')],
+  [Markup.button.callback('⭐ Star', 'caption_star')],
+  [Markup.button.callback('🏰 Gothic', 'caption_gothic')],
+  [Markup.button.callback('💥 Boom', 'caption_boom')],
+  [Markup.button.callback('📝 Memo', 'caption_memo')],
+  [Markup.button.callback('📊 Bar', 'caption_bar')],
+];
+
+const CAPTION_STYLE_EMOJI = {
+  bubble: '💬',
+  star: '⭐',
+  gothic: '🏰',
+  boom: '💥',
+  memo: '📝',
+  bar: '📊',
+};
+
 async function sendScenarioView(ctx, sc, status) {
   const cardText = formatScenarioCard(sc, status);
   const keyboard = getScenarioButtons(sc, status);
@@ -461,11 +479,12 @@ bot.command('edit', async (ctx) => {
 async function processCreateComic(ctx, input) {
   const statusMsg = await ctx.reply(`⏳ <b>Генерация сценария...</b>\nАнализирую источник и генерирую кадры с MiniMax LLM...`, { parse_mode: 'HTML' });
 
-  // Get image style from state (default: comic)
+  // Get styles from state (defaults)
   const state = userState.get(ctx.from.id);
   const imageStyle = (typeof state === 'object' && state.image_style) ? state.image_style : 'comic';
+  const captionStyle = (typeof state === 'object' && state.caption_style) ? state.caption_style : 'bubble';
 
-  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify --image-style ${imageStyle} `;
+  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify --image-style ${imageStyle} --style ${captionStyle} `;
   if (input.startsWith('http://') || input.startsWith('https://')) {
     if (input.includes('youtube.com') || input.includes('youtu.be')) {
       cmd += `--youtube ${JSON.stringify(input)}`;
@@ -511,7 +530,7 @@ bot.action(/^style_(cartoon|anime|comic|realistic|watercolor)$/, async (ctx) => 
     const pendingInput = (typeof state === 'object') ? state.pending_input : null;
     userState.set(ctx.from.id, { action: 'awaiting_create_input', image_style: style, pending_input: pendingInput });
     
-    // Если был pending_input, сразу создаём
+    // Если был pending_input, пропускаем caption style и сразу создаём
     if (pendingInput) {
       ctx.answerCbQuery(`✅ Стиль: ${IMAGE_STYLE_EMOJI[style]} ${style}`);
       await ctx.reply(`✅ Стиль: <b>${IMAGE_STYLE_EMOJI[style]} ${style}</b>. Генерирую комикс...`, { parse_mode: 'HTML' });
@@ -520,7 +539,30 @@ bot.action(/^style_(cartoon|anime|comic|realistic|watercolor)$/, async (ctx) => 
   }
 
   ctx.answerCbQuery(`✅ Стиль: ${IMAGE_STYLE_EMOJI[style]} ${style}`);
-  await ctx.reply(`✅ Выбран стиль: <b>${IMAGE_STYLE_EMOJI[style]} ${style}</b>\n\nТеперь отправьте контент для комикса (URL, YouTube или текст).`, { parse_mode: 'HTML' });
+  await ctx.reply(`✅ Стиль картинок: <b>${IMAGE_STYLE_EMOJI[style]} ${style}</b>\n\n💬 Теперь выбери стиль подписей:`, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard(CAPTION_STYLE_BUTTONS)
+  });
+});
+
+// Caption style selection
+bot.action(/^caption_(bubble|star|gothic|boom|memo|bar)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const captionStyle = ctx.match[1];
+  const state = userState.get(ctx.from.id);
+
+  if (state && typeof state === 'object' && state.action === 'awaiting_create_input') {
+    // Update state with caption style
+    userState.set(ctx.from.id, {
+      ...state,
+      caption_style: captionStyle,
+    });
+
+    ctx.answerCbQuery(`✅ Подпись: ${CAPTION_STYLE_EMOJI[captionStyle]} ${captionStyle}`);
+    await ctx.reply(`✅ Подпись: <b>${CAPTION_STYLE_EMOJI[captionStyle]} ${captionStyle}</b>\n\nТеперь отправьте контент для комикса (URL, YouTube или текст).`, { parse_mode: 'HTML' });
+  } else {
+    ctx.answerCbQuery('⚠️ Сначала выбери стиль картинок');
+  }
 });
 
 bot.action(/^view:(.+)$/, async (ctx) => {
