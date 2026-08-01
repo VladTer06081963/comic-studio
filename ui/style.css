@@ -225,6 +225,8 @@ h2 { margin-top: 0; }
 
 .actions button.edit { background: var(--accent2); color: black; border-color: var(--accent2); }
 .actions button.delete { background: var(--red); color: white; border-color: var(--red); }
+.actions button.render { background: var(--accent); color: white; border-color: var(--accent); }
+.actions button.seed { background: var(--muted); color: black; border-color: var(--muted); }
 
 .feedback-badge {
   display: inline-block;

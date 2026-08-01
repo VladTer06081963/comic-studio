@@ -170,6 +170,65 @@ app.delete('/api/scenarios/:id', (req, res) => {
   res.json({ ok: true, id });
 });
 
+// API: render — запустить рендер сценария
+app.post('/api/scenarios/:id/render', async (req, res) => {
+  const id = req.params.id;
+  const { seed } = req.body || {};
+
+  // Найти сценарий
+  let scPath = null;
+  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
+    const p = path.join(DATA_DIR, 'scenarios', status, `${id}.json`);
+    if (fs.existsSync(p)) {
+      scPath = p;
+      break;
+    }
+  }
+
+  if (!scPath) return res.status(404).json({ error: 'Not found' });
+
+  // Если передан seed — обновить в сценарии
+  if (seed !== undefined) {
+    const sc = JSON.parse(fs.readFileSync(scPath, 'utf-8'));
+    sc.seed = parseInt(seed) || 0;
+    atomicWrite(scPath, sc);
+  }
+
+  // Запустить render в фоне
+  const { exec } = await import('child_process');
+  const cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
+  exec(cmd, { cwd: PROJECT_ROOT }, (err, stdout, stderr) => {
+    if (err) console.error(`Render error for ${id}:`, err);
+    else console.log(`Render done for ${id}`);
+  });
+
+  res.json({ ok: true, id, status: 'rendering' });
+});
+
+// API: update seed
+app.post('/api/scenarios/:id/seed', (req, res) => {
+  const id = req.params.id;
+  const { seed } = req.body;
+  if (seed === undefined) return res.status(400).json({ error: 'seed required' });
+
+  let scPath = null;
+  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
+    const p = path.join(DATA_DIR, 'scenarios', status, `${id}.json`);
+    if (fs.existsSync(p)) {
+      scPath = p;
+      break;
+    }
+  }
+
+  if (!scPath) return res.status(404).json({ error: 'Not found' });
+
+  const sc = JSON.parse(fs.readFileSync(scPath, 'utf-8'));
+  sc.seed = parseInt(seed) || 0;
+  atomicWrite(scPath, sc);
+
+  res.json({ ok: true, id, seed: sc.seed });
+});
+
 // API: feedback — добавить правку
 app.post('/api/scenarios/:id/feedback', (req, res) => {
   const id = req.params.id;

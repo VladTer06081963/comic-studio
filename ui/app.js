@@ -188,7 +188,9 @@ function scenarioCard(sc, status) {
   const more = sc.panels.length > 3 ? `<div>…+${sc.panels.length - 3}</div>` : '';
   const imageStyleBadge = getImageStyleBadge(sc.image_style || 'comic');
   const feedbackBadge = getFeedbackBadge((sc.feedback || []).length);
-  const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge} ${feedbackBadge}`;
+  const seedBadge = sc.seed !== undefined ? `<span class="tag">🎲 ${sc.seed}</span>` : '';
+  const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge} ${feedbackBadge} ${seedBadge}`;
+  const renderBtn = `<button class="render" data-id="${sc.id}" data-action="render">🎨 Рендер</button>`;
   const actions = status === 'draft' ? `
     <div class="actions">
       <button class="approve" data-id="${sc.id}" data-action="approve">✅ Утвердить</button>
@@ -198,6 +200,8 @@ function scenarioCard(sc, status) {
     </div>` : `
     <div class="actions">
       <button class="edit" data-id="${sc.id}" data-action="edit">✏️ Редактировать</button>
+      ${renderBtn}
+      <button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed</button>
       <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
     </div>`;
   return `
@@ -219,6 +223,53 @@ function attachHandlers(status) {
   document.querySelectorAll(`#${status}-list .actions button.delete`).forEach(btn => {
     btn.addEventListener('click', () => openDeleteModal(btn.dataset.id));
   });
+
+  // Render button (not for draft)
+  if (status !== 'draft') {
+    document.querySelectorAll(`#${status}-list .actions button.render`).forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        btn.disabled = true;
+        btn.textContent = '⏳ Рендер...';
+        try {
+          const res = await fetch(`/api/scenarios/${id}/render`, { method: 'POST' });
+          const data = await res.json();
+          if (data.ok) {
+            btn.textContent = '🎨 Рендер запущен';
+            setTimeout(() => loadTab(status), 1000);
+          } else {
+            btn.textContent = 'Ошибка';
+          }
+        } catch (err) {
+          btn.textContent = 'Ошибка';
+        }
+      });
+    });
+
+    // Seed button
+    document.querySelectorAll(`#${status}-list .actions button.seed`).forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const newSeed = prompt('Введи seed (число) или оставь пустым для рандома:');
+        if (newSeed === null) return; // Cancel
+        const seed = newSeed.trim() === '' ? Math.floor(Math.random() * 1000000) : parseInt(newSeed);
+        if (isNaN(seed)) return alert('Некорректный seed');
+        try {
+          const res = await fetch(`/api/scenarios/${id}/seed`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ seed }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            loadTab(status);
+          }
+        } catch (err) {
+          alert(`Ошибка: ${err.message}`);
+        }
+      });
+    });
+  }
 
   // Approve/reject only for draft
   if (status !== 'draft') return;

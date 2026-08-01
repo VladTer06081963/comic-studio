@@ -673,9 +673,108 @@ bot.action(/^reject:(.+)$/, async (ctx) => {
 bot.action(/^edit:(.+)$/, async (ctx) => {
   if (!assertAuthorized(ctx)) return;
   const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+
+  ctx.answerCbQuery('✏️ Редактирование');
+
+  // Показать карточку с inline-кнопками
+  const editKeyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('💬 Общий фидбек', `edit_feedback:${id}`)],
+    [Markup.button.callback('🎲 Изменить seed', `edit_seed:${id}`)],
+    [Markup.button.callback('🔄 Перерендерить', `edit_rerender:${id}`)],
+    [Markup.button.callback('❌ Отмена', `edit_cancel:${id}`)],
+  ]);
+
+  try {
+    await ctx.editMessageText(`✏️ <b>Редактирование сценария <code>${escapeHtml(id)}</code></b>\n\nВыбери действие:`, {
+      parse_mode: 'HTML',
+      ...editKeyboard
+    });
+  } catch (e) {
+    await ctx.reply(`✏️ <b>Редактирование сценария <code>${escapeHtml(id)}</code></b>\n\nВыбери действие:`, {
+      parse_mode: 'HTML',
+      ...editKeyboard
+    });
+  }
+});
+
+// Sub-actions for edit card
+bot.action(/^edit_feedback:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
   userState.set(ctx.from.id, { action: 'awaiting_edit_feedback', scenarioId: id });
-  ctx.answerCbQuery('Жду правки');
-  await ctx.reply(`✏️ Отправьте правки для сценария <code>${escapeHtml(id)}</code> в ответном сообщении:`, { parse_mode: 'HTML' });
+  ctx.answerCbQuery('Жду текст');
+  await ctx.reply(`💬 Отправьте текст правки для сценария <code>${escapeHtml(id)}</code>:\n\n<i>(просто напиши в чат — будет сохранено)</i>`, { parse_mode: 'HTML' });
+});
+
+bot.action(/^edit_seed:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  userState.set(ctx.from.id, { action: 'awaiting_seed', scenarioId: id });
+  ctx.answerCbQuery('Жду seed');
+  await ctx.reply(`🎲 Отправьте новое значение seed (число) или /random для случайного:`, { parse_mode: 'HTML' });
+});
+
+bot.action(/^edit_rerender:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+  ctx.answerCbQuery('🎨 Перерендер...');
+
+  // Show seed choice
+  const seedKeyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🎲 Случайный seed', `rerender_random:${id}`)],
+    [Markup.button.callback('🔢 Свой seed', `edit_seed:${id}`)],
+    [Markup.button.callback('❌ Отмена', `edit:${id}`)],
+  ]);
+
+  await ctx.reply(`🔄 <b>Перерендер сценария <code>${escapeHtml(id)}</code></b>\n\nТекущий seed: <code>${found.scenario.seed || 'не задан'}</code>\n\nВыбери:`, {
+    parse_mode: 'HTML',
+    ...seedKeyboard
+  });
+});
+
+bot.action(/^rerender_random:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const newSeed = Math.floor(Math.random() * 1000000);
+
+  // Update seed
+  const found = findScenario(id);
+  if (found) {
+    found.scenario.seed = newSeed;
+    atomicWrite(found.path, found.scenario);
+  }
+
+  ctx.answerCbQuery(`🎲 Seed: ${newSeed}`);
+
+  // Trigger render
+  await ctx.reply(`🎲 Новый seed: <code>${newSeed}</code>\n🎨 Запускаю рендер...`, { parse_mode: 'HTML' });
+
+  const cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
+  execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 })
+    .then(() => {
+      const updated = findScenario(id);
+      if (updated) {
+        ctx.reply(`🎉 <b>Перерендер завершён! (seed=${newSeed})</b>`, { parse_mode: 'HTML' });
+        return sendScenarioView(ctx, updated.scenario, updated.status);
+      }
+    })
+    .catch(err => {
+      ctx.reply(`❌ <b>Ошибка рендера:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
+    });
+});
+
+bot.action(/^edit_cancel:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  ctx.answerCbQuery('Отменено');
+  if (found) {
+    await sendScenarioView(ctx, found.scenario, found.status);
+  }
 });
 
 bot.action(/^render:(.+)$/, async (ctx) => {
@@ -839,6 +938,26 @@ bot.on('text', async (ctx) => {
       sc.feedback.push({ ts: new Date().toISOString(), text });
       atomicWrite(found.path, sc);
       return ctx.reply(`📝 Правка сохранена для <code>${escapeHtml(id)}</code>!`, { parse_mode: 'HTML' });
+    }
+  }
+
+  if (state && typeof state === 'object' && state.action === 'awaiting_seed') {
+    userState.delete(ctx.from.id);
+    const id = state.scenarioId;
+    let newSeed;
+    if (text === '/random') {
+      newSeed = Math.floor(Math.random() * 1000000);
+    } else {
+      newSeed = parseInt(text);
+      if (isNaN(newSeed)) {
+        return ctx.reply('❌ Некорректный seed. Введи число или /random', { parse_mode: 'HTML' });
+      }
+    }
+    const found = findScenario(id);
+    if (found) {
+      found.scenario.seed = newSeed;
+      atomicWrite(found.path, found.scenario);
+      return ctx.reply(`🎲 Seed обновлён: <code>${newSeed}</code>\nИспользуй 🔄 Перерендерить для применения.`, { parse_mode: 'HTML' });
     }
   }
 
