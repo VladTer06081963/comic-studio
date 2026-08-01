@@ -62,6 +62,29 @@
     </section>
   </main>
 
+  <!-- Edit Modal -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>✏️ Редактирование сценария</h3>
+      <p>ID: <code id="edit-id"></code></p>
+      <textarea id="edit-text" placeholder="Опишите правки..."></textarea>
+      <div class="examples">
+        <small>Примеры правок:</small>
+        <div id="examples-list">
+          <button class="example-btn">Убрать панель 2</button>
+          <button class="example-btn">Сделать более смешным</button>
+          <button class="example-btn">Добавить драмы в 3 панель</button>
+          <button class="example-btn">Изменить концовку</button>
+          <button class="example-btn">Добавить персонажа</button>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="edit-cancel">Отмена</button>
+        <button id="edit-save">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
   <script src="approve.js"></script>
   <script src="app.js"></script>
 </body>

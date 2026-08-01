@@ -21,6 +21,73 @@ function getImageStyleBadge(style) {
   const color = IMAGE_STYLE_COLORS[style] || '#666';
   return `<span class="tag image-style" style="background:${color};color:white">${emoji} ${style}</span>`;
 }
+
+function getFeedbackBadge(count) {
+  if (!count || count === 0) return '';
+  return `<span class="feedback-badge" title="Количество правок">💬 ${count} прав${count === 1 ? 'ка' : count < 5 ? 'ки' : 'ок'}</span>`;
+}
+
+// Edit Modal Logic
+let currentEditId = null;
+
+function openEditModal(id) {
+  currentEditId = id;
+  document.getElementById('edit-id').textContent = id;
+  document.getElementById('edit-text').value = '';
+  document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+  currentEditId = null;
+  document.getElementById('edit-modal').classList.add('hidden');
+}
+
+// Example button handlers
+document.querySelectorAll('.example-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const ta = document.getElementById('edit-text');
+    ta.value = ta.value ? `${ta.value}\n${btn.textContent}` : btn.textContent;
+  });
+});
+
+// Modal buttons
+document.getElementById('edit-cancel')?.addEventListener('click', closeEditModal);
+document.getElementById('edit-save')?.addEventListener('click', async () => {
+  const text = document.getElementById('edit-text').value.trim();
+  if (!text) return alert('Введите текст правки');
+  if (!currentEditId) return;
+
+  const btn = document.getElementById('edit-save');
+  btn.disabled = true;
+  btn.textContent = '⏳ Сохранение...';
+
+  try {
+    const res = await fetch(`/api/scenarios/${currentEditId}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      closeEditModal();
+      // Reload current tab
+      const activeTab = document.querySelector('nav button.active').dataset.tab;
+      loadTab(activeTab);
+    } else {
+      alert(`Ошибка: ${data.error}`);
+    }
+  } catch (err) {
+    alert(`Ошибка: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Сохранить';
+  }
+});
+
+// Close modal on backdrop click
+document.getElementById('edit-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'edit-modal') closeEditModal();
+});
 // ── Create Form Handler ──────────────────────────────────────────────────────
 document.getElementById('create-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -78,12 +145,17 @@ function scenarioCard(sc, status) {
   const panels = sc.panels.slice(0, 3).map(p => `<div>${p.n}. ${escapeHtml(p.caption)}</div>`).join('');
   const more = sc.panels.length > 3 ? `<div>…+${sc.panels.length - 3}</div>` : '';
   const imageStyleBadge = getImageStyleBadge(sc.image_style || 'comic');
-  const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge}`;
+  const feedbackBadge = getFeedbackBadge((sc.feedback || []).length);
+  const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge} ${feedbackBadge}`;
   const actions = status === 'draft' ? `
     <div class="actions">
       <button class="approve" data-id="${sc.id}" data-action="approve">✅ Утвердить</button>
       <button class="reject" data-id="${sc.id}" data-action="reject">❌ Отклонить</button>
-    </div>` : '';
+      <button class="edit" data-id="${sc.id}" data-action="edit">✏️ Редактировать</button>
+    </div>` : `
+    <div class="actions">
+      <button class="edit" data-id="${sc.id}" data-action="edit">✏️ Редактировать</button>
+    </div>`;
   return `
     <div class="card">
       <h3>${escapeHtml(sc.title)}</h3>
@@ -94,8 +166,14 @@ function scenarioCard(sc, status) {
 }
 
 function attachHandlers(status) {
+  // Edit button works for all statuses
+  document.querySelectorAll(`#${status}-list .actions button.edit`).forEach(btn => {
+    btn.addEventListener('click', () => openEditModal(btn.dataset.id));
+  });
+
+  // Approve/reject only for draft
   if (status !== 'draft') return;
-  document.querySelectorAll(`#${status}-list .actions button`).forEach(btn => {
+  document.querySelectorAll(`#${status}-list .actions button.approve, #${status}-list .actions button.reject`).forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       const action = btn.dataset.action;

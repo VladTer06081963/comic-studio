@@ -134,6 +134,43 @@ app.post('/api/scenarios/:id/approve', (req, res) => {
   res.json({ ok: true, id, status: 'approved' });
 });
 
+// API: feedback — добавить правку
+app.post('/api/scenarios/:id/feedback', (req, res) => {
+  const id = req.params.id;
+  const { text } = req.body;
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'text required' });
+  }
+
+  // Найти сценарий в любом статусе
+  let sc = null;
+  let scPath = null;
+  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
+    const p = path.join(DATA_DIR, 'scenarios', status, `${id}.json`);
+    if (fs.existsSync(p)) {
+      sc = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      scPath = p;
+      break;
+    }
+  }
+
+  if (!sc) return res.status(404).json({ error: 'Not found' });
+
+  sc.feedback = sc.feedback || [];
+  sc.feedback.push({
+    ts: new Date().toISOString(),
+    text: text.trim(),
+    source: 'web-ui',
+  });
+  atomicWrite(scPath, sc);
+
+  res.json({
+    ok: true,
+    id,
+    feedback_count: sc.feedback.length,
+  });
+});
+
 // API: reject — draft → rejected
 app.post('/api/scenarios/:id/reject', (req, res) => {
   const id = req.params.id;
