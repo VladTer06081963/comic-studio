@@ -11,6 +11,7 @@ dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.join(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
+const VENV_PYTHON = path.join(PROJECT_ROOT, '.venv', 'bin', 'python3');
 
 const app = express();
 app.use(cors());
@@ -62,6 +63,39 @@ app.get('/api/scenarios', (req, res) => {
   const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
   const scenarios = files.map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8')));
   res.json(scenarios);
+});
+
+// API: создать сценарий
+app.post('/api/scenarios', async (req, res) => {
+  const { content, image_style } = req.body;
+  if (!content) return res.status(400).json({ error: 'content required' });
+
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
+  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify --image-style ${image_style || 'comic'} `;
+  if (content.startsWith('http://') || content.startsWith('https://')) {
+    if (content.includes('youtube.com') || content.includes('youtu.be')) {
+      cmd += `--youtube ${JSON.stringify(content)}`;
+    } else {
+      cmd += `--url ${JSON.stringify(content)}`;
+    }
+  } else {
+    cmd += `--freeform ${JSON.stringify(content)}`;
+  }
+
+  try {
+    const { stdout } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
+    const match = stdout.match(/ID:\s*([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      res.json({ ok: true, id: match[1] });
+    } else {
+      res.json({ ok: true, output: stdout });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // API: один сценарий

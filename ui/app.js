@@ -1,4 +1,33 @@
 // ui/app.js — dashboard logic
+// ── Create Form Handler ──────────────────────────────────────────────────────
+document.getElementById('create-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const content = document.getElementById('content').value;
+  const imageStyle = document.getElementById('image-style').value;
+  const result = document.getElementById('create-result');
+
+  result.innerHTML = '⏳ Создаю сценарий...';
+
+  try {
+    const res = await fetch('/api/scenarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, image_style: imageStyle }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      result.innerHTML = `✅ Сценарий создан! <code>${data.id}</code>`;
+      document.getElementById('content').value = '';
+      // Refresh draft tab
+      loadTab('draft');
+    } else {
+      result.innerHTML = `❌ Ошибка: ${data.error}`;
+    }
+  } catch (err) {
+    result.innerHTML = `❌ Ошибка: ${err.message}`;
+  }
+});
+
 const tabs = document.querySelectorAll('nav button');
 const contents = document.querySelectorAll('.tab-content');
 

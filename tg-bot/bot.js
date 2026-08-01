@@ -169,6 +169,22 @@ function getMainMenu() {
   ]).resize();
 }
 
+const IMAGE_STYLE_BUTTONS = [
+  [Markup.button.callback('🎬 Cartoon', 'style_cartoon')],
+  [Markup.button.callback('🎌 Anime', 'style_anime')],
+  [Markup.button.callback('📚 Comic', 'style_comic')],
+  [Markup.button.callback('📷 Realistic', 'style_realistic')],
+  [Markup.button.callback('🎨 Watercolor', 'style_watercolor')],
+];
+
+const IMAGE_STYLE_EMOJI = {
+  cartoon: '🎬',
+  anime: '🎌',
+  comic: '📚',
+  realistic: '📷',
+  watercolor: '🎨',
+};
+
 async function sendScenarioView(ctx, sc, status) {
   const cardText = formatScenarioCard(sc, status);
   const keyboard = getScenarioButtons(sc, status);
@@ -393,7 +409,12 @@ bot.command('create', async (ctx) => {
   const input = ctx.message.text.replace(/^\/create\s*/, '').trim();
   if (!input) {
     userState.set(ctx.from.id, 'awaiting_create_input');
-    return ctx.reply('✨ <b>Создание комикса:</b>\n\nОтправьте ссылку на статью (URL), YouTube-видео или опишите идею в свободной форме.', { parse_mode: 'HTML' });
+    await ctx.reply('✨ <b>Создание комикса:</b>\n\nОтправьте ссылку на статью (URL), YouTube-видео или опишите идею в свободной форме.', { parse_mode: 'HTML' });
+    await ctx.reply('🎨 <b>Выберите стиль изображений:</b>', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard(IMAGE_STYLE_BUTTONS)
+    });
+    return;
   }
   await processCreateComic(ctx, input);
 });
@@ -420,7 +441,11 @@ bot.command('edit', async (ctx) => {
 async function processCreateComic(ctx, input) {
   const statusMsg = await ctx.reply(`⏳ <b>Генерация сценария...</b>\nАнализирую источник и генерирую кадры с MiniMax LLM...`, { parse_mode: 'HTML' });
 
-  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify `;
+  // Get image style from state (default: comic)
+  const state = userState.get(ctx.from.id);
+  const imageStyle = (typeof state === 'object' && state.image_style) ? state.image_style : 'comic';
+
+  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify --image-style ${imageStyle} `;
   if (input.startsWith('http://') || input.startsWith('https://')) {
     if (input.includes('youtube.com') || input.includes('youtu.be')) {
       cmd += `--youtube ${JSON.stringify(input)}`;
@@ -454,6 +479,21 @@ async function processCreateComic(ctx, input) {
 }
 
 // ── Inline Actions ────────────────────────────────────────────────────────────
+
+// Image style selection
+bot.action(/^style_(cartoon|anime|comic|realistic|watercolor)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const style = ctx.match[1];
+  const state = userState.get(ctx.from.id);
+
+  // Save style to state
+  if (state === 'awaiting_create_input' || (typeof state === 'object' && state.action === 'awaiting_create_input')) {
+    userState.set(ctx.from.id, { action: 'awaiting_create_input', image_style: style });
+  }
+
+  ctx.answerCbQuery(`✅ Стиль: ${IMAGE_STYLE_EMOJI[style]} ${style}`);
+  await ctx.reply(`✅ Выбран стиль: <b>${IMAGE_STYLE_EMOJI[style]} ${style}</b>\n\nТеперь отправьте контент для комикса (URL, YouTube или текст).`, { parse_mode: 'HTML' });
+});
 
 bot.action(/^view:(.+)$/, async (ctx) => {
   if (!assertAuthorized(ctx)) return;
