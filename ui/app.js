@@ -1,4 +1,26 @@
 // ui/app.js — dashboard logic
+
+const IMAGE_STYLE_EMOJI = {
+  cartoon: '🎬',
+  anime: '🎌',
+  comic: '📚',
+  realistic: '📷',
+  watercolor: '🎨',
+};
+
+const IMAGE_STYLE_COLORS = {
+  cartoon: '#ff6b35',
+  anime: '#e91e63',
+  comic: '#2196f3',
+  realistic: '#4caf50',
+  watercolor: '#9c27b0',
+};
+
+function getImageStyleBadge(style) {
+  const emoji = IMAGE_STYLE_EMOJI[style] || '🎨';
+  const color = IMAGE_STYLE_COLORS[style] || '#666';
+  return `<span class="tag image-style" style="background:${color};color:white">${emoji} ${style}</span>`;
+}
 // ── Create Form Handler ──────────────────────────────────────────────────────
 document.getElementById('create-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -55,7 +77,8 @@ async function loadTab(name) {
 function scenarioCard(sc, status) {
   const panels = sc.panels.slice(0, 3).map(p => `<div>${p.n}. ${escapeHtml(p.caption)}</div>`).join('');
   const more = sc.panels.length > 3 ? `<div>…+${sc.panels.length - 3}</div>` : '';
-  const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span>`;
+  const imageStyleBadge = getImageStyleBadge(sc.image_style || 'comic');
+  const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge}`;
   const actions = status === 'draft' ? `
     <div class="actions">
       <button class="approve" data-id="${sc.id}" data-action="approve">✅ Утвердить</button>

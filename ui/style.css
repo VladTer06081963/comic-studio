@@ -116,6 +116,7 @@ h2 { margin-top: 0; }
 .tag.gothic { background: #2d2d2d; color: var(--accent2); border: 1px solid var(--accent2); }
 .tag.boom { background: var(--red); color: white; }
 .tag.memo { background: #ffeb3b; color: black; }
+.tag.image-style { font-weight: bold; }
 
 .empty { color: var(--muted); font-style: italic; padding: 2rem; text-align: center; }
 
