@@ -13,6 +13,7 @@ import re
 import subprocess
 import tempfile
 import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -56,7 +57,6 @@ def _fetch_supadata(url: str, language: str = "ru") -> Optional[str]:
     logger.info(f"Trying supadata API for {url}")
 
     try:
-        import urllib.request
         req = urllib.request.Request(
             f"{SUPADATA_API_URL}?{params}",
             headers=headers,
