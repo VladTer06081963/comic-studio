@@ -232,3 +232,30 @@ h2 { margin-top: 0; }
   font-size: 0.75rem;
   margin-right: 0.25rem;
 }
+
+/* Help content */
+.help-content {
+  max-width: 800px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2rem;
+}
+.help-content h3 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--accent2);
+}
+.help-content h3:first-child { margin-top: 0; }
+.help-content ul, .help-content ol {
+  line-height: 1.7;
+}
+.help-content code {
+  background: var(--bg);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+.help-content i {
+  color: var(--muted);
+}

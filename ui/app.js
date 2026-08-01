@@ -130,6 +130,7 @@ tabs.forEach(t => t.addEventListener('click', () => {
 
 async function loadTab(name) {
   if (name === 'comics') return loadComics();
+  if (name === 'help') return; // Static content, no fetch needed
   const res = await fetch(`/api/scenarios?status=${name}`);
   const scenarios = await res.json();
   const container = document.getElementById(`${name}-list`);
