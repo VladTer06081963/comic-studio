@@ -30,8 +30,8 @@ text = transcribe_youtube("https://www.youtube.com/watch?v=VIDEO_ID")
 
 ## Методы (в порядке приоритета)
 
-1. **supadata.ai API** — быстрый, без скачивания
-2. **yt-dlp субтитры** — бесплатный, если субтитры включены
+1. **yt-dlp субтитры** — бесплатный, если субтитры включены
+2. **supadata.ai API** — fallback, платный (лимит бесплатных запросов)
 3. **Аудио + Voicebox/whisper** — последний fallback
 
 ## Требования

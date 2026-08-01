@@ -194,25 +194,25 @@ def transcribe_youtube(url: str, language: str = "ru") -> str:
     """Транскрибирует YouTube-видео. Возвращает текст."""
     video_id = _extract_video_id(url)
 
-    # 1. Supadata API (приоритет)
-    text = _fetch_supadata(url, language)
-    if text:
-        return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
-
+    # 1. yt-dlp субтитры (бесплатно)
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
-
-        # 2. yt-dlp субтитры
         text = _fetch_subs(video_id, workdir)
         if text:
             return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
 
-        # 3. Аудио + транскрибация
-        logger.info("No subs, transcribing audio")
+    # 2. Supadata API (fallback, платный)
+    text = _fetch_supadata(url, language)
+    if text:
+        return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
+
+    # 3. Аудио + Voicebox/whisper (последний fallback)
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = Path(tmp)
+        logger.info("Trying audio transcription")
         text = _fetch_audio_and_transcribe(video_id, workdir, language)
         if not text:
             raise RuntimeError(f"Failed to transcribe {url}")
-
         return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
 
 
