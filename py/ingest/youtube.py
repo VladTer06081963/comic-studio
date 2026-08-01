@@ -1,16 +1,18 @@
-"""Транскрибация YouTube через yt-dlp + Voicebox (STT) или готовые субтитры.
+"""Транскрибация YouTube через supadata.ai API или yt-dlp + Voicebox.
 
 Стратегия:
-1. Попробовать скачать авто-субтитры (быстро, бесплатно).
-2. Если субтитров нет — скачать аудио и транскрибировать через Voicebox (mlx-whisper на Apple Silicon).
-3. Если Voicebox недоступен — whisper (PyTorch, тяжёлый).
+1. supadata.ai API (приоритет) — быстро, без скачивания
+2. yt-dlp авто-субтитры (fallback)
+3. Скачивание аудио + Voicebox/whisper (последний fallback)
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import tempfile
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +22,7 @@ logger = setup("ingest.youtube")
 
 VOICEBOX_URL = "http://127.0.0.1:17493"
 MAX_TRANSCRIPT_CHARS = 30_000
+SUPADATA_API_URL = "https://api.supadata.ai/v1/youtube/transcript"
 
 
 def _extract_video_id(url: str) -> str:
@@ -35,9 +38,49 @@ def _extract_video_id(url: str) -> str:
     raise ValueError(f"Cannot extract video id from: {url!r}")
 
 
+def _fetch_supadata(url: str, language: str = "ru") -> Optional[str]:
+    """Транскрипт через supadata.ai API. Возвращает текст или None."""
+    api_key = os.environ.get("SUPADATA_API_KEY")
+    if not api_key:
+        logger.info("SUPADATA_API_KEY not set, skipping supadata")
+        return None
+
+    encoded_url = urllib.parse.quote(url, safe="")
+    headers = {
+        "x-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+
+    # Пробуем с языком
+    params = f"url={encoded_url}&lang={language}&text=true"
+    logger.info(f"Trying supadata API for {url}")
+
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"{SUPADATA_API_URL}?{params}",
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+
+            if error := data.get("error"):
+                logger.warning(f"Supadata error: {error}")
+                return None
+
+            text = data.get("content", "")
+            if text:
+                logger.info(f"Supadata: got {len(text)} chars")
+                return text
+    except Exception as e:
+        logger.warning(f"Supadata API failed: {e}")
+
+    return None
+
+
 def _fetch_subs(video_id: str, workdir: Path) -> Optional[str]:
-    """Пробует скачать готовые субтитры. Возвращает текст или None."""
-    logger.info(f"Trying auto-subs for {video_id}")
+    """Скачивает авто-субтитры через yt-dlp. Возвращает текст или None."""
+    logger.info(f"Trying yt-dlp subs for {video_id}")
     cmd = [
         "yt-dlp",
         "--write-auto-sub",
@@ -73,10 +116,7 @@ def _fetch_subs(video_id: str, workdir: Path) -> Optional[str]:
 
 
 def _transcribe_voicebox(audio_path: Path, language: str = "ru") -> Optional[str]:
-    """Транскрибирует через Voicebox API (mlx-whisper). Возвращает текст или None."""
-    import urllib.request
-    import urllib.parse
-
+    """Транскрибирует через Voicebox API. Возвращает текст или None."""
     logger.info(f"Trying Voicebox transcription for {audio_path}")
     try:
         with open(audio_path, "rb") as f:
@@ -90,6 +130,7 @@ def _transcribe_voicebox(audio_path: Path, language: str = "ru") -> Optional[str
         body += audio_data
         body += f"\r\n--{boundary}--\r\n".encode()
 
+        import urllib.request
         req = urllib.request.Request(
             f"{VOICEBOX_URL}/transcribe",
             data=body,
@@ -101,7 +142,7 @@ def _transcribe_voicebox(audio_path: Path, language: str = "ru") -> Optional[str
         with urllib.request.urlopen(req, timeout=300) as resp:
             result = json.loads(resp.read())
             text = result.get("text", "").strip()
-            logger.info(f"Voicebox: {len(text)} chars, {result.get('duration', '?')}s")
+            logger.info(f"Voicebox: {len(text)} chars")
             return text
     except Exception as e:
         logger.warning(f"Voicebox transcription failed: {e}")
@@ -109,7 +150,7 @@ def _transcribe_voicebox(audio_path: Path, language: str = "ru") -> Optional[str
 
 
 def _fetch_audio_and_transcribe(video_id: str, workdir: Path, language: str = "ru") -> Optional[str]:
-    """Скачивает аудио и транскрибирует: Voicebox → whisper fallback."""
+    """Скачивает аудио и транскрибирует: Voicebox → whisper."""
     audio_path = workdir / f"{video_id}.mp3"
     logger.info(f"Downloading audio to {audio_path}")
 
@@ -132,13 +173,13 @@ def _fetch_audio_and_transcribe(video_id: str, workdir: Path, language: str = "r
             return None
         audio_path = candidates[0]
 
-    # 1. Пробуем Voicebox (mlx-whisper, быстро, без PyTorch)
+    # Voicebox
     text = _transcribe_voicebox(audio_path, language)
     if text:
         return text
 
-    # 2. Fallback: whisper (PyTorch)
-    logger.info("Voicebox unavailable, falling back to whisper")
+    # whisper fallback
+    logger.info("Falling back to whisper")
     try:
         import whisper
         model = whisper.load_model("base")
@@ -152,26 +193,27 @@ def _fetch_audio_and_transcribe(video_id: str, workdir: Path, language: str = "r
 def transcribe_youtube(url: str, language: str = "ru") -> str:
     """Транскрибирует YouTube-видео. Возвращает текст."""
     video_id = _extract_video_id(url)
+
+    # 1. Supadata API (приоритет)
+    text = _fetch_supadata(url, language)
+    if text:
+        return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
+
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
 
-        # 1. Субтитры (приоритет)
+        # 2. yt-dlp субтитры
         text = _fetch_subs(video_id, workdir)
         if text:
-            if len(text) > MAX_TRANSCRIPT_CHARS:
-                text = text[:MAX_TRANSCRIPT_CHARS]
-            return text
+            return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
 
-        # 2. Транскрибация: Voicebox → whisper
+        # 3. Аудио + транскрибация
         logger.info("No subs, transcribing audio")
         text = _fetch_audio_and_transcribe(video_id, workdir, language)
         if not text:
             raise RuntimeError(f"Failed to transcribe {url}")
 
-        if len(text) > MAX_TRANSCRIPT_CHARS:
-            logger.info(f"Transcript {len(text)} chars exceeds {MAX_TRANSCRIPT_CHARS}, truncating")
-            text = text[:MAX_TRANSCRIPT_CHARS]
-        return text
+        return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
 
 
 if __name__ == "__main__":
