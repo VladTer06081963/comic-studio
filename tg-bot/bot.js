@@ -423,15 +423,20 @@ bot.command('create', async (ctx) => {
   if (!assertAuthorized(ctx)) return;
   const input = ctx.message.text.replace(/^\/create\s*/, '').trim();
   if (!input) {
-    userState.set(ctx.from.id, 'awaiting_create_input');
+    userState.set(ctx.from.id, { action: 'awaiting_create_input', image_style: 'comic' });
     await ctx.reply('✨ <b>Создание комикса:</b>\n\nОтправьте ссылку на статью (URL), YouTube-видео или опишите идею в свободной форме.', { parse_mode: 'HTML' });
-    await ctx.reply('🎨 <b>Выберите стиль изображений:</b>', {
+    await ctx.reply('🎨 <b>Выберите стиль изображений:</b>\n\n(можешь выбрать сейчас или пропустить — по умолчанию 📚 Comic)', {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard(IMAGE_STYLE_BUTTONS)
     });
     return;
   }
-  await processCreateComic(ctx, input);
+  // Если есть input, сначала спросить про стиль
+  userState.set(ctx.from.id, { action: 'awaiting_create_input', image_style: 'comic', pending_input: input });
+  await ctx.reply('🎨 <b>Выберите стиль изображений:</b>\n\n(можешь выбрать сейчас или пропустить — по умолчанию 📚 Comic)', {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard(IMAGE_STYLE_BUTTONS)
+  });
 });
 
 // /edit <id> <feedback>
@@ -501,9 +506,17 @@ bot.action(/^style_(cartoon|anime|comic|realistic|watercolor)$/, async (ctx) => 
   const style = ctx.match[1];
   const state = userState.get(ctx.from.id);
 
-  // Save style to state
+  // Save style to state, preserving any pending_input
   if (state === 'awaiting_create_input' || (typeof state === 'object' && state.action === 'awaiting_create_input')) {
-    userState.set(ctx.from.id, { action: 'awaiting_create_input', image_style: style });
+    const pendingInput = (typeof state === 'object') ? state.pending_input : null;
+    userState.set(ctx.from.id, { action: 'awaiting_create_input', image_style: style, pending_input: pendingInput });
+    
+    // Если был pending_input, сразу создаём
+    if (pendingInput) {
+      ctx.answerCbQuery(`✅ Стиль: ${IMAGE_STYLE_EMOJI[style]} ${style}`);
+      await ctx.reply(`✅ Стиль: <b>${IMAGE_STYLE_EMOJI[style]} ${style}</b>. Генерирую комикс...`, { parse_mode: 'HTML' });
+      return processCreateComic(ctx, pendingInput);
+    }
   }
 
   ctx.answerCbQuery(`✅ Стиль: ${IMAGE_STYLE_EMOJI[style]} ${style}`);
@@ -627,8 +640,12 @@ bot.on('text', async (ctx) => {
     return listScenariosByStatus(ctx, 'draft', '🟢 Черновики на утверждении');
   }
   if (text === '✨ Создать комикс') {
-    userState.set(ctx.from.id, 'awaiting_create_input');
-    return ctx.reply('✨ <b>Создание комикса:</b>\n\nОтправьте ссылку на статью (URL), YouTube или опишите идею комикса в свободной форме.', { parse_mode: 'HTML' });
+    userState.set(ctx.from.id, { action: 'awaiting_create_input', image_style: 'comic' });
+    await ctx.reply('✨ <b>Создание комикса:</b>\n\nОтправьте ссылку на статью (URL), YouTube или опишите идею комикса в свободной форме.', { parse_mode: 'HTML' });
+    return ctx.reply('🎨 <b>Выберите стиль изображений:</b>\n\n(можешь выбрать сейчас или пропустить — по умолчанию 📚 Comic)', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard(IMAGE_STYLE_BUTTONS)
+    });
   }
   if (text === '📂 Все сценарии') {
     return listAllScenarios(ctx);
@@ -704,7 +721,7 @@ bot.on('text', async (ctx) => {
 
   // ── State: awaiting input from previous step ──────────────────────────────
   const state = userState.get(ctx.from.id);
-  if (state === 'awaiting_create_input') {
+  if (state === 'awaiting_create_input' || (typeof state === 'object' && state.action === 'awaiting_create_input')) {
     userState.delete(ctx.from.id);
     return processCreateComic(ctx, text);
   }
