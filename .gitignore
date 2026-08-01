@@ -1,0 +1,54 @@
+# Virtual environments
+.venv/
+.venv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Logs & data
+*.log
+data/logs/*.log
+
+# Draft scenarios (don't commit drafts)
+data/scenarios/draft/*
+data/scenarios/approved/*
+data/scenarios/rejected/
+data/scenarios/rendered/*
+
+# Comics output
+data/comics/**/*.png
+data/comics/**/*.json
+
+# Keep directories structure
+!data/scenarios/draft/.gitkeep
+!data/scenarios/approved/.gitkeep
+!data/scenarios/rejected/.gitkeep
+!data/scenarios/rendered/.gitkeep
+!data/comics/.gitkeep
+!data/logs/.gitkeep
+!data/archive/.gitkeep
+!data/freeform/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db

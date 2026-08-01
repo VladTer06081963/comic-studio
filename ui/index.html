@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comic Studio — Дашборд</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🎨 Comic Studio</h1>
+    <nav>
+      <button data-tab="draft" class="active">Черновики</button>
+      <button data-tab="approved">Утверждённые</button>
+      <button data-tab="rendered">Готовые</button>
+      <button data-tab="comics">Комиксы</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-draft" class="tab-content active">
+      <h2>📋 Черновики на утверждении</h2>
+      <div id="draft-list" class="grid"></div>
+    </section>
+
+    <section id="tab-approved" class="tab-content">
+      <h2>✅ Утверждённые (ждут рендера)</h2>
+      <div id="approved-list" class="grid"></div>
+    </section>
+
+    <section id="tab-rendered" class="tab-content">
+      <h2>🎬 Готовые (рендер завершён)</h2>
+      <div id="rendered-list" class="grid"></div>
+    </section>
+
+    <section id="tab-comics" class="tab-content">
+      <h2>🖼️ Все выпуски</h2>
+      <div id="comics-list" class="grid"></div>
+    </section>
+  </main>
+
+  <script src="approve.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

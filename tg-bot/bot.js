@@ -1,0 +1,682 @@
+// tg-bot/bot.js — Telegram-бот для управления и утверждения сценариев Comic Studio
+import { Telegraf, Markup } from 'telegraf';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+
+dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env') });
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.join(__dirname, '..');
+const VENV_PYTHON = path.join(PROJECT_ROOT, '.venv', 'bin', 'python3');  // Python from venv
+const DATA_DIR = path.join(PROJECT_ROOT, 'data');
+const SCENARIOS_DIR = path.join(DATA_DIR, 'scenarios');
+const COMICS_DIR = path.join(DATA_DIR, 'comics');
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '1045621572';
+
+if (!BOT_TOKEN) {
+  console.error('❌ TELEGRAM_BOT_TOKEN not set in .env');
+  process.exit(1);
+}
+
+const bot = new Telegraf(BOT_TOKEN);
+
+// User state tracking for multi-step flows (e.g. prompt creation or edit feedback)
+const userState = new Map();
+
+// ── Authorization ────────────────────────────────────────────────────────────
+function assertAuthorized(ctx) {
+  const chatId = String(ctx.chat?.id ?? ctx.message?.chat?.id ?? '');
+  if (chatId !== CHAT_ID) {
+    ctx.reply('⛔ <b>Доступ ограничен.</b> Вы не авторизованы для использования этого бота.', { parse_mode: 'HTML' }).catch(() => {});
+    return false;
+  }
+  return true;
+}
+
+// ── Helper Utilities ──────────────────────────────────────────────────────────
+const STATUS_BADGES = {
+  draft: '🟢 Черновик',
+  approved: '🔵 Утверждён',
+  rendered: '🎨 Отрендерен',
+  published: '🚀 Опубликован',
+  rejected: '🔴 Отклонён',
+};
+
+function findScenario(id) {
+  for (const status of ['draft', 'approved', 'rendered', 'published', 'rejected']) {
+    const p = path.join(SCENARIOS_DIR, status, `${id}.json`);
+    if (fs.existsSync(p)) {
+      try {
+        const scenario = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        return { scenario, status, path: p };
+      } catch (e) {
+        console.error(`Error reading ${p}:`, e);
+      }
+    }
+  }
+  return null;
+}
+
+function atomicWrite(filePath, data) {
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  fs.renameSync(tmp, filePath);
+}
+
+function moveScenario(id, fromStatus, toStatus) {
+  const from = path.join(SCENARIOS_DIR, fromStatus, `${id}.json`);
+  const toDir = path.join(SCENARIOS_DIR, toStatus);
+  if (!fs.existsSync(toDir)) fs.mkdirSync(toDir, { recursive: true });
+  const to = path.join(toDir, `${id}.json`);
+
+  if (!fs.existsSync(from)) {
+    // Check if already in target status
+    if (fs.existsSync(to)) {
+      const existing = JSON.parse(fs.readFileSync(to, 'utf-8'));
+      if (existing.status === toStatus) return existing;
+    }
+    return false;
+  }
+
+  const sc = JSON.parse(fs.readFileSync(from, 'utf-8'));
+  sc.status = toStatus;
+  sc[`${toStatus}_at`] = new Date().toISOString();
+  atomicWrite(to, sc);
+  fs.unlinkSync(from);
+  return sc;
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatScenarioCard(sc, status) {
+  const badge = STATUS_BADGES[status] || status;
+  const panels = (sc.panels || [])
+    .map(p => `  <b>${p.n}.</b> <i>"${escapeHtml(p.caption)}"</i>`)
+    .join('\n');
+
+  let sourceStr = escapeHtml(sc.source || 'свободный ввод');
+  if (sc.source_url) {
+    sourceStr = `<a href="${escapeHtml(sc.source_url)}">${sourceStr}</a>`;
+  }
+
+  let text = `<b>🎨 СЦЕНАРИЙ КОМИКСА</b>\n`;
+  text += `<b>«${escapeHtml(sc.title || 'Без названия')}»</b>\n\n`;
+  text += `🏷 <b>Статус:</b> ${badge}\n`;
+  text += `🆔 <b>ID:</b> <code>${escapeHtml(sc.id)}</code>\n`;
+  text += `🎭 <b>Тон:</b> <code>${escapeHtml(sc.tone || 'epic')}</code> | 🖌 <b>Стиль:</b> <code>${escapeHtml(sc.style || 'star')}</code> | 📐 <b>Сетка:</b> <code>${escapeHtml(sc.layout || 'comic')}</code>\n`;
+  if (sc.seed !== undefined) text += `🎲 <b>Seed:</b> <code>${sc.seed}</code>\n`;
+  text += `\n📖 <b>Панели (${(sc.panels || []).length}):</b>\n${panels}\n\n`;
+  text += `🌐 <b>Источник:</b> ${sourceStr}\n`;
+  if (sc.created_at) {
+    const dt = new Date(sc.created_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+    text += `📅 <b>Создан:</b> ${dt}\n`;
+  }
+  if (sc.published_url) {
+    text += `🔗 <b>Ссылка:</b> <a href="${escapeHtml(sc.published_url)}">Сайт</a>\n`;
+  }
+  if (sc.feedback && sc.feedback.length > 0) {
+    const lastFb = sc.feedback[sc.feedback.length - 1];
+    text += `\n💬 <b>Правка:</b> <i>${escapeHtml(lastFb.text)}</i>\n`;
+  }
+
+  return text;
+}
+
+function getScenarioButtons(sc, status) {
+  const buttons = [];
+  if (status === 'draft') {
+    buttons.push([
+      Markup.button.callback('✅ Утвердить', `approve:${sc.id}`),
+      Markup.button.callback('✏️ Редактировать', `edit:${sc.id}`),
+    ]);
+    buttons.push([Markup.button.callback('❌ Отклонить', `reject:${sc.id}`)]);
+  } else if (status === 'approved') {
+    buttons.push([
+      Markup.button.callback('🎨 Запустить рендер', `render:${sc.id}`),
+      Markup.button.callback('✏️ Редактировать', `edit:${sc.id}`),
+    ]);
+  } else if (status === 'rendered') {
+    buttons.push([
+      Markup.button.callback('🚀 Опубликовать', `publish:${sc.id}`),
+      Markup.button.callback('🎨 Повторить рендер', `render:${sc.id}`),
+    ]);
+  } else if (status === 'published') {
+    buttons.push([Markup.button.callback('🎨 Повторить рендер', `render:${sc.id}`)]);
+  }
+  return Markup.inlineKeyboard(buttons);
+}
+
+function getMainMenu() {
+  return Markup.keyboard([
+    ['📋 Черновики', '✨ Создать комикс'],
+    ['📂 Все сценарии', '📊 Статистика'],
+    ['ℹ️ Помощь']
+  ]).resize();
+}
+
+async function sendScenarioView(ctx, sc, status) {
+  const cardText = formatScenarioCard(sc, status);
+  const keyboard = getScenarioButtons(sc, status);
+
+  // Check if rendered comic PNG exists
+  const comicPath = sc.comic_path || path.join(COMICS_DIR, `${sc.id}.png`);
+  if ((status === 'rendered' || status === 'published') && fs.existsSync(comicPath)) {
+    try {
+      await ctx.replyWithPhoto({ source: comicPath }, {
+        caption: cardText,
+        parse_mode: 'HTML',
+        ...keyboard
+      });
+      return;
+    } catch (e) {
+      console.warn(`Failed to send photo for ${sc.id}:`, e.message);
+    }
+  }
+
+  await ctx.reply(cardText, {
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...keyboard
+  });
+}
+
+// ── Command Handlers ──────────────────────────────────────────────────────────
+
+// /start
+bot.command('start', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const welcome = 
+    `<b>🤖 Comic Studio Bot</b>\n\n` +
+    `Я помогаю создавать, утверждать, рендерить и публиковать серийные комиксы с помощью MiniMax AI.\n\n` +
+    `<b>Быстрый старт:</b>\n` +
+    `1. Нажми <b>✨ Создать комикс</b> в меню\n` +
+    `2. Опиши идею или отправь ссылку\n` +
+    `3. Нажми ✅ — бот сам нарисует комикс\n\n` +
+    `<b>Источники:</b>\n` +
+    `• Текст → свободная идея\n` +
+    `• URL → статья из интернета\n` +
+    `• YouTube → видео с субтитрами\n\n` +
+    `Используй <b>/help</b> для списка всех команд.`;
+  await ctx.reply(welcome, { parse_mode: 'HTML', ...getMainMenu() });
+});
+
+// /help
+bot.command('help', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const helpText =
+    `<b>🤖 Comic Studio Bot — Справка</b>\n\n` +
+    `<b>🎨 Создание комикса:</b>\n` +
+    `• <code>/create текст или URL</code> — создать сценарий\n` +
+    `• Просто отправь ссылку на статью или YouTube — бот сам поймёт\n` +
+    `• Просто отправь текст — станет идеей для комикса\n\n` +
+    `<b>📋 Управление сценариями:</b>\n` +
+    `• <code>/pending</code> — 🟢 черновики на утверждение\n` +
+    `• <code>/approved</code> — 🔵 готовы к рендеру\n` +
+    `• <code>/rendered</code> — 🎨 отрендеренные\n` +
+    `• <code>/published</code> — 🚀 опубликованные\n` +
+    `• <code>/rejected</code> — 🔴 отклонённые\n` +
+    `• <code>/all</code> — 📂 все сценарии\n` +
+    `• <code>/view ID</code> — открыть сценарий по ID\n` +
+    `• Отправь ID — откроется карточка сценария\n\n` +
+    `<b>✏️ Редактирование:</b>\n` +
+    `• <code>/edit ID текст правки</code> — добавить комментарий\n` +
+    `• Кнопка ✏️ на сценарии → откроется режим ожидания правки\n\n` +
+    `<b>🚀 Управление контентом:</b>\n` +
+    `• Кнопка <b>✅ Утвердить</b> — запустить рендер\n` +
+    `• Кнопка <b>🎨 Рендер</b> — сгенерировать картинки\n` +
+    `• Кнопка <b>🚀 Публикация</b> — отправить на сайт\n` +
+    `• Кнопка <b>❌ Отклонить</b> — убрать из очереди\n\n` +
+    `<b>📊 Информация:</b>\n` +
+    `• <code>/stats</code> — статистика по статусам\n` +
+    `• Меню внизу — быстрый доступ к спискам\n\n` +
+    `<b>💡 Подсказка:</b>\n` +
+    `• Нажми <b>✨ Создать комикс</b> в меню — и просто опиши идею\n` +
+    `• Подписи в комиксах — <b>только на русском языке</b>`;
+  await ctx.reply(helpText, { parse_mode: 'HTML', ...getMainMenu() });
+});
+
+// /pending
+bot.command('pending', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  await listScenariosByStatus(ctx, 'draft', '🟢 Черновики на утверждении');
+});
+
+// /approved
+bot.command('approved', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  await listScenariosByStatus(ctx, 'approved', '🔵 Утверждённые сценарии (готовы к рендеру)');
+});
+
+// /rendered
+bot.command('rendered', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  await listScenariosByStatus(ctx, 'rendered', '🎨 Отрендеренные комиксы');
+});
+
+// /published
+bot.command('published', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  await listScenariosByStatus(ctx, 'published', '🚀 Опубликованные комиксы');
+});
+
+// /rejected
+bot.command('rejected', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  await listScenariosByStatus(ctx, 'rejected', '🔴 Отклонённые сценарии');
+});
+
+async function listAllScenarios(ctx) {
+  let total = 0;
+  let text = `<b>📂 Все сценарии в системе:</b>\n\n`;
+
+  for (const status of ['draft', 'approved', 'rendered', 'published', 'rejected']) {
+    const dir = path.join(SCENARIOS_DIR, status);
+    if (!fs.existsSync(dir)) continue;
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+    if (!files.length) continue;
+
+    const badge = STATUS_BADGES[status] || status;
+    text += `<b>${badge} (${files.length}):</b>\n`;
+    for (const f of files) {
+      total++;
+      try {
+        const sc = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8'));
+        text += `• <code>${sc.id}</code> — <b>${escapeHtml(sc.title || 'Без названия')}</b>\n`;
+      } catch (e) {
+        text += `• <code>${f.replace('.json', '')}</code>\n`;
+      }
+    }
+    text += `\n`;
+  }
+
+  if (total === 0) {
+    return ctx.reply('📭 Сценарии пока отсутствуют.');
+  }
+
+  text += `<i>Отправьте ID сценария боту для просмотра и управления.</i>`;
+  await ctx.reply(text, { parse_mode: 'HTML', ...getMainMenu() });
+}
+
+// /all
+bot.command('all', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  await listAllScenarios(ctx);
+});
+
+async function listScenariosByStatus(ctx, status, header) {
+  const dir = path.join(SCENARIOS_DIR, status);
+  if (!fs.existsSync(dir)) return ctx.reply(`📭 ${header}: список пуст.`);
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+  if (!files.length) return ctx.reply(`📭 ${header}: список пуст.`);
+
+  let text = `<b>${header}:</b>\n\n`;
+  const buttons = [];
+
+  files.forEach(f => {
+    try {
+      const sc = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8'));
+      text += `• <code>${sc.id}</code> — <b>${escapeHtml(sc.title || 'Без названия')}</b>\n`;
+      buttons.push([Markup.button.callback(`🔍 View ${sc.id}`, `view:${sc.id}`)]);
+    } catch (e) {
+      text += `• <code>${f.replace('.json', '')}</code>\n`;
+    }
+  });
+
+  text += `\n<i>Нажмите на кнопку ниже или отправьте ID сценария:</i>`;
+  await ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+}
+
+// /stats
+bot.command('stats', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const counts = { draft: 0, approved: 0, rendered: 0, published: 0, rejected: 0 };
+  let total = 0;
+
+  for (const s of Object.keys(counts)) {
+    const dir = path.join(SCENARIOS_DIR, s);
+    if (fs.existsSync(dir)) {
+      const count = fs.readdirSync(dir).filter(f => f.endsWith('.json')).length;
+      counts[s] = count;
+      total += count;
+    }
+  }
+
+  let text = `<b>📊 Статистика Comic Studio:</b>\n\n`;
+  text += `🟢 <b>Черновики:</b> ${counts.draft}\n`;
+  text += `🔵 <b>Утверждённые:</b> ${counts.approved}\n`;
+  text += `🎨 <b>Отрендеренные:</b> ${counts.rendered}\n`;
+  text += `🚀 <b>Опубликованные:</b> ${counts.published}\n`;
+  text += `🔴 <b>Отклонённые:</b> ${counts.rejected}\n`;
+  text += `------------------------\n`;
+  text += `📦 <b>Всего сценариев:</b> ${total}\n\n`;
+
+  // Check env health
+  const hasMinimax = !!process.env.MINIMAX_API_KEY;
+  const hasNotion = !!process.env.NOTION_API_KEY;
+  text += `<b>⚙️ Интеграции:</b>\n`;
+  text += `• MiniMax AI: ${hasMinimax ? '✅ Подключен' : '⚠️ Отсутствует MINIMAX_API_KEY'}\n`;
+  text += `• Notion Mirror: ${hasNotion ? '✅ Подключен' : '⚪️ Не настроен'}\n`;
+
+  await ctx.reply(text, { parse_mode: 'HTML', ...getMainMenu() });
+});
+
+// /view <id>
+bot.command('view', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const args = ctx.message.text.trim().split(/\s+/);
+  const id = args[1];
+  if (!id) return ctx.reply('Использование: <code>/view &lt;ID&gt;</code>', { parse_mode: 'HTML' });
+
+  const found = findScenario(id);
+  if (!found) return ctx.reply(`❌ Сценарий <code>${escapeHtml(id)}</code> не найден.`, { parse_mode: 'HTML' });
+  await sendScenarioView(ctx, found.scenario, found.status);
+});
+
+// /create <source>
+bot.command('create', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const input = ctx.message.text.replace(/^\/create\s*/, '').trim();
+  if (!input) {
+    userState.set(ctx.from.id, 'awaiting_create_input');
+    return ctx.reply('✨ <b>Создание комикса:</b>\n\nОтправьте ссылку на статью (URL), YouTube-видео или опишите идею в свободной форме.', { parse_mode: 'HTML' });
+  }
+  await processCreateComic(ctx, input);
+});
+
+// /edit <id> <feedback>
+bot.command('edit', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const parts = ctx.message.text.trim().split(/\s+/);
+  const id = parts[1];
+  const feedback = parts.slice(2).join(' ');
+  if (!id || !feedback) return ctx.reply('Использование: <code>/edit &lt;scenario-id&gt; &lt;текст правки&gt;</code>', { parse_mode: 'HTML' });
+
+  const found = findScenario(id);
+  if (!found) return ctx.reply(`❌ Сценарий <code>${escapeHtml(id)}</code> не найден.`, { parse_mode: 'HTML' });
+
+  const sc = found.scenario;
+  sc.feedback = sc.feedback || [];
+  sc.feedback.push({ ts: new Date().toISOString(), text: feedback });
+  atomicWrite(found.path, sc);
+  await ctx.reply(`📝 Правка сохранена для <code>${escapeHtml(id)}</code>!`, { parse_mode: 'HTML' });
+});
+
+// ── Ingest & Generation Pipeline Helper ────────────────────────────────────────
+async function processCreateComic(ctx, input) {
+  const statusMsg = await ctx.reply(`⏳ <b>Генерация сценария...</b>\nАнализирую источник и генерирую кадры с MiniMax LLM...`, { parse_mode: 'HTML' });
+
+  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify `;
+  if (input.startsWith('http://') || input.startsWith('https://')) {
+    if (input.includes('youtube.com') || input.includes('youtu.be')) {
+      cmd += `--youtube ${JSON.stringify(input)}`;
+    } else {
+      cmd += `--url ${JSON.stringify(input)}`;
+    }
+  } else {
+    cmd += `--freeform ${JSON.stringify(input)}`;
+  }
+
+  try {
+    const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
+    
+    // Extract ID from stdout
+    const match = stdout.match(/ID:\s*([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      const id = match[1];
+      const found = findScenario(id);
+      if (found) {
+        try { await ctx.deleteMessage(statusMsg.message_id); } catch(e) {}
+        await ctx.reply(`🎉 <b>Сценарий успешно создан!</b>`, { parse_mode: 'HTML' });
+        await sendScenarioView(ctx, found.scenario, found.status);
+        return;
+      }
+    }
+    await ctx.reply(`✅ Сценарий создан! Посмотрите список: /pending`, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('Create error:', err);
+    await ctx.reply(`❌ <b>Ошибка генерации сценария:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
+  }
+}
+
+// ── Inline Actions ────────────────────────────────────────────────────────────
+
+bot.action(/^view:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+  ctx.answerCbQuery();
+  await sendScenarioView(ctx, found.scenario, found.status);
+});
+
+bot.action(/^approve:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const sc = moveScenario(id, 'draft', 'approved');
+  if (!sc) return ctx.answerCbQuery('Ошибка обновления');
+  ctx.answerCbQuery('✅ Сценарий утверждён!');
+
+  const cardText = formatScenarioCard(sc, 'approved');
+  const keyboard = getScenarioButtons(sc, 'approved');
+  try {
+    await ctx.editMessageText(`✅ <b>Сценарий утверждён!</b>\n\n` + cardText, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...keyboard
+    });
+  } catch (e) {
+    await ctx.reply(`✅ <b>Сценарий ${id} утверждён!</b>`, { parse_mode: 'HTML', ...keyboard });
+  }
+});
+
+bot.action(/^reject:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const sc = moveScenario(id, 'draft', 'rejected');
+  if (!sc) return ctx.answerCbQuery('Ошибка обновления');
+  ctx.answerCbQuery('❌ Сценарий отклонён');
+
+  try {
+    await ctx.editMessageText(`❌ <b>Сценарий «${escapeHtml(sc.title)}» отклонён.</b>`, { parse_mode: 'HTML' });
+  } catch (e) {
+    await ctx.reply(`❌ <b>Сценарий ${id} отклонён.</b>`, { parse_mode: 'HTML' });
+  }
+});
+
+bot.action(/^edit:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  userState.set(ctx.from.id, { action: 'awaiting_edit_feedback', scenarioId: id });
+  ctx.answerCbQuery('Жду правки');
+  await ctx.reply(`✏️ Отправьте правки для сценария <code>${escapeHtml(id)}</code> в ответном сообщении:`, { parse_mode: 'HTML' });
+});
+
+bot.action(/^render:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+
+  ctx.answerCbQuery('🎨 Запускаю рендер...');
+  const progressMsg = await ctx.reply(`🎨 <b>Запущен рендер комикса <code>${id}</code>...</b>\n\n⏳ Генерируем изображения панелей через MiniMax AI и собираем итоговый стрип. Это может занять около 1-2 минут.`, { parse_mode: 'HTML' });
+
+  const cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
+  try {
+    const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
+    try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+
+    const updated = findScenario(id);
+    if (updated) {
+      await ctx.reply(`🎉 <b>Рендеринг завершён!</b>`, { parse_mode: 'HTML' });
+      await sendScenarioView(ctx, updated.scenario, updated.status);
+    } else {
+      await ctx.reply(`✅ Комикс <code>${id}</code> успешно отрендерен!`, { parse_mode: 'HTML' });
+    }
+  } catch (err) {
+    console.error('Render error:', err);
+    try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+    await ctx.reply(`❌ <b>Ошибка рендеринга:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
+  }
+});
+
+bot.action(/^publish:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+
+  ctx.answerCbQuery('🚀 Публикую...');
+  const progressMsg = await ctx.reply(`🚀 <b>Публикация комикса <code>${id}</code>...</b>`, { parse_mode: 'HTML' });
+
+  const cmd = `node scripts/publish_rendered.js`;
+  try {
+    const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
+    try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+
+    const updated = findScenario(id);
+    if (updated) {
+      await ctx.reply(`🎉 <b>Комикс успешно опубликован!</b>`, { parse_mode: 'HTML' });
+      await sendScenarioView(ctx, updated.scenario, updated.status);
+    } else {
+      await ctx.reply(`✅ Комикс <code>${id}</code> опубликован!`, { parse_mode: 'HTML' });
+    }
+  } catch (err) {
+    console.error('Publish error:', err);
+    try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+    await ctx.reply(`❌ <b>Ошибка публикации:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
+  }
+});
+
+// ── Text & Keyboard Input Handler ─────────────────────────────────────────────
+bot.on('text', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const text = ctx.message.text.trim();
+
+  // ── Menu keyboard buttons (must be first to prevent wrong matches) ────────
+  if (text === '📋 Черновики') {
+    return listScenariosByStatus(ctx, 'draft', '🟢 Черновики на утверждении');
+  }
+  if (text === '✨ Создать комикс') {
+    userState.set(ctx.from.id, 'awaiting_create_input');
+    return ctx.reply('✨ <b>Создание комикса:</b>\n\nОтправьте ссылку на статью (URL), YouTube или опишите идею комикса в свободной форме.', { parse_mode: 'HTML' });
+  }
+  if (text === '📂 Все сценарии') {
+    return listAllScenarios(ctx);
+  }
+  if (text === '📊 Статистика') {
+    const counts = { draft: 0, approved: 0, rendered: 0, published: 0, rejected: 0 };
+    let total = 0;
+    for (const s of Object.keys(counts)) {
+      const dir = path.join(SCENARIOS_DIR, s);
+      if (fs.existsSync(dir)) {
+        const count = fs.readdirSync(dir).filter(f => f.endsWith('.json')).length;
+        counts[s] = count;
+        total += count;
+      }
+    }
+    let statsStr = `<b>📊 Статистика Comic Studio:</b>\n\n`;
+    statsStr += `🟢 <b>Черновики:</b> ${counts.draft}\n`;
+    statsStr += `🔵 <b>Утверждённые:</b> ${counts.approved}\n`;
+    statsStr += `🎨 <b>Отрендеренные:</b> ${counts.rendered}\n`;
+    statsStr += `🚀 <b>Опубликованные:</b> ${counts.published}\n`;
+    statsStr += `🔴 <b>Отклонённые:</b> ${counts.rejected}\n`;
+    statsStr += `------------------------\n`;
+    statsStr += `📦 <b>Всего сценариев:</b> ${total}\n`;
+    return ctx.reply(statsStr, { parse_mode: 'HTML', ...getMainMenu() });
+  }
+  if (text === 'ℹ️ Помощь') {
+    // Show help directly instead of echoing /help
+    const helpText =
+      `<b>🤖 Comic Studio Bot — Справка</b>\n\n` +
+      `<b>🎨 Создание комикса:</b>\n` +
+      `• <code>/create текст или URL</code> — создать сценарий\n` +
+      `• Просто отправь ссылку на статью или YouTube\n` +
+      `• Просто отправь текст — станет идеей для комикса\n\n` +
+      `<b>📋 Управление сценариями:</b>\n` +
+      `• <code>/pending</code> — 🟢 черновики на утверждение\n` +
+      `• <code>/approved</code> — 🔵 готовы к рендеру\n` +
+      `• <code>/rendered</code> — 🎨 отрендеренные\n` +
+      `• <code>/published</code> — 🚀 опубликованные\n` +
+      `• <code>/rejected</code> — 🔴 отклонённые\n` +
+      `• <code>/all</code> — 📂 все сценарии\n` +
+      `• Отправь ID — откроется карточка сценария\n\n` +
+      `<b>✏️ Редактирование:</b>\n` +
+      `• <code>/edit ID текст правки</code>\n` +
+      `• Кнопка ✏️ на сценарии\n\n` +
+      `<b>🚀 Контент:</b>\n` +
+      `• Кнопка <b>✅ Утвердить</b>\n` +
+      `• Кнопка <b>🎨 Рендер</b>\n` +
+      `• Кнопка <b>🚀 Публикация</b>\n` +
+      `• Кнопка <b>❌ Отклонить</b>\n\n` +
+      `<b>📊 Информация:</b>\n` +
+      `• <code>/stats</code> — статистика\n` +
+      `• Меню внизу — быстрый доступ\n\n` +
+      `<b>💡 Подсказка:</b> Нажми <b>✨ Создать комикс</b> и опиши идею!\n` +
+      `Подписи в комиксах — <b>только на русском языке</b>`;
+    return ctx.reply(helpText, { parse_mode: 'HTML', ...getMainMenu() });
+  }
+
+  // ── State: awaiting input from previous step ──────────────────────────────
+  const state = userState.get(ctx.from.id);
+  if (state === 'awaiting_create_input') {
+    userState.delete(ctx.from.id);
+    return processCreateComic(ctx, text);
+  }
+  if (state && typeof state === 'object' && state.action === 'awaiting_edit_feedback') {
+    userState.delete(ctx.from.id);
+    const id = state.scenarioId;
+    const found = findScenario(id);
+    if (found) {
+      const sc = found.scenario;
+      sc.feedback = sc.feedback || [];
+      sc.feedback.push({ ts: new Date().toISOString(), text });
+      atomicWrite(found.path, sc);
+      return ctx.reply(`📝 Правка сохранена для <code>${escapeHtml(id)}</code>!`, { parse_mode: 'HTML' });
+    }
+  }
+
+  // ── Direct scenario ID lookup ────────────────────────────────────────────
+  if (/^[a-zA-Z0-9_-]{4,12}$/.test(text)) {
+    const found = findScenario(text);
+    if (found) {
+      return sendScenarioView(ctx, found.scenario, found.status);
+    }
+  }
+
+  // ── URL input: create comic from article/YouTube link ─────────────────────
+  if (text.startsWith('http://') || text.startsWith('https://')) {
+    return processCreateComic(ctx, text);
+  }
+
+  // ── Unknown text: suggest creation ───────────────────────────────────────
+  return ctx.reply(
+    `<b>Я не понял.</b>\n\n` +
+    `Нажми <b>✨ Создать комикс</b> в меню или напиши /create и опиши идею.`,
+    { parse_mode: 'HTML', ...getMainMenu() }
+  );
+});
+
+// Launch Bot
+bot.launch().then(() => {
+  console.log(`🤖 Telegram bot запущен в обновлённом режиме. Chat ID: ${CHAT_ID}`);
+}).catch(err => {
+  console.error('Failed to launch bot:', err);
+});
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
