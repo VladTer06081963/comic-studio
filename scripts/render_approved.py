@@ -24,6 +24,21 @@ from py.render.comic_assembler import assemble_comic
 logger = setup("scripts.render_approved")
 
 
+def find_renderable(scenario_id: str) -> dict | None:
+    """Find a scenario that's either approved or rendered (for re-render).
+
+    Returns the scenario dict, or None if not found / not in valid state.
+    """
+    import json
+    for status in ["approved", "rendered", "published"]:
+        p = scenarios_dir(status) / f"{scenario_id}.json"
+        if p.exists():
+            sc = json.loads(p.read_text(encoding="utf-8"))
+            logger.info(f"Found {scenario_id} in status={status}")
+            return sc
+    return None
+
+
 def render_one(scenario: dict) -> Path:
     """Рендерит один сценарий: параллельная генерация панелей → сборка → rendered transition."""
     sid = scenario["id"]
@@ -95,10 +110,10 @@ def main():
     # ── Collect scenarios ────────────────────────────────────────────────────
     scenarios = []
     if args.scenario_id:
-        # Gate: must be approved
-        sc = validate_approved(args.scenario_id)
+        # Render: must be approved OR rendered (for re-render)
+        sc = find_renderable(args.scenario_id)
         if not sc:
-            logger.error(f"{args.scenario_id}: not in approved status")
+            logger.error(f"{args.scenario_id}: not in approved/rendered status")
             sys.exit(1)
         scenarios = [sc]
     else:
