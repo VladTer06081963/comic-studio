@@ -49,6 +49,10 @@ data/comics/**/*.json
 !data/archive/.gitkeep
 !data/freeform/.gitkeep
 
+# Skills (pi agent skills)
+skills/tmp/
+skills/cache/
+
 # OS
 .DS_Store
 Thumbs.db
