@@ -85,7 +85,8 @@ def main():
     src.add_argument("--file", help="Путь к файлу с контекстом")
 
     ap.add_argument("--tone", choices=["epic", "funny", "educational", "dark", "whimsical"])
-    ap.add_argument("--style", choices=["star", "bubble", "gothic", "boom", "memo", "bar"])
+    ap.add_argument("--style", choices=["star", "bubble", "gothic", "boom", "memo", "bar"], help="Стиль подписей")
+    ap.add_argument("--image-style", choices=["cartoon", "anime", "comic", "realistic", "watercolor"], default="comic", help="Стиль изображений (default: comic)")
     ap.add_argument("--panels", type=int, default=3, help="Количество панелей (3-4)")
     ap.add_argument("--seed", type=int, help="Seed для детерминированного рендера")
     ap.add_argument("--skip-notify", action="store_true", help="Пропустить Telegram-уведомление")
@@ -113,6 +114,7 @@ def main():
         context,
         tone=args.tone,
         style=args.style,
+        image_style=args.image_style,
         num_panels=args.panels,
     )
     scenario.update(source_meta)
@@ -124,7 +126,7 @@ def main():
     print(f"\n✅ Draft saved → {out_path}")
     print(f"   ID: {scenario['id']}")
     print(f"   Title: {scenario['title']}")
-    print(f"   Tone: {scenario['tone']}, Style: {scenario['style']}, "
+    print(f"   Tone: {scenario['tone']}, Caption: {scenario['style']}, Image: {scenario['image_style']}, "
           f"Panels: {len(scenario['panels'])}")
 
     # 4. Notion mirror (optional, no-op if not configured)

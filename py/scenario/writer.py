@@ -17,6 +17,15 @@ from py.lib.logging_setup import setup
 
 logger = setup("scenario.writer")
 
+# Стили изображений для MiniMax image-01
+STYLE_TEMPLATES = {
+    "cartoon": "cartoon style, vibrant colors, animated, fun, expressive characters, bold outlines",
+    "anime": "anime style, Japanese animation, cel shaded, detailed background, dramatic lighting",
+    "comic": "comic book style, bold outlines, halftone dots, pop art colors, dramatic shadows",
+    "realistic": "photorealistic, 8K, detailed, cinematic lighting, high contrast, sharp focus",
+    "watercolor": "watercolor painting style, soft edges, artistic, paper texture, gentle colors",
+}
+
 SYSTEM_PROMPT = """Ты креативный сценарист коротких кинематографичных комиксов (3-4 панели).
 Тебе дают контекст (статья, транскрипт видео, свободный текст).
 Твоя задача — придумать визуальную мини-историю.
@@ -95,21 +104,32 @@ def generate_scenario(
     context: str,
     tone: Optional[str] = None,
     style: Optional[str] = None,
+    image_style: Optional[str] = None,
     num_panels: int = 3,
 ) -> dict:
     """Генерирует сценарий комикса из текстового контекста.
 
-    Возвращает dict со всеми полями сценария + id, created_at, status, source.
+    Args:
+        context: Текстовый контекст для сценария
+        tone: Тон комикса (epic, funny, educational, dark, whimsical)
+        style: Стиль подписей (star, bubble, gothic, boom, memo, bar)
+        image_style: Стиль изображений (cartoon, anime, comic, realistic, watercolor)
+        num_panels: Количество панелей
+
+    Returns:
+        dict со всеми полями сценария + id, created_at, status, source
     """
     # Enforce spec drafting context bound
     bounded = context[:MAX_CONTEXT_CHARS]
     if len(context) > MAX_CONTEXT_CHARS:
         logger.info(f"Context {len(context)} chars exceeds {MAX_CONTEXT_CHARS}, truncating to {MAX_CONTEXT_CHARS}")
+    
     user_msg = (
         f"Контекст:\n\n{bounded}\n\n"
         f"Требования: {num_panels} панели."
         + (f" Тон: {tone}." if tone else "")
         + (f" Стиль подписей: {style}." if style else "")
+        + (f" Стиль картинок: {image_style}." if image_style else "")
     )
 
     logger.info(f"Generating scenario ({num_panels} panels, {len(context)} chars context)")
@@ -126,14 +146,21 @@ def generate_scenario(
     # Дефолты
     scenario.setdefault("tone", tone or "epic")
     scenario.setdefault("style", style or "star")
+    scenario.setdefault("image_style", image_style or "comic")
     scenario.setdefault("layout", "comic")
     scenario.setdefault("aspect_ratio", "16:9")
+
+    # Добавляем стиль к промптам панелей
+    style_suffix = STYLE_TEMPLATES.get(scenario["image_style"], STYLE_TEMPLATES["comic"])
+    for panel in scenario.get("panels", []):
+        if "prompt" in panel:
+            panel["prompt"] = f"{panel['prompt']}, {style_suffix}"
 
     # Проверка структуры
     if not isinstance(scenario.get("panels"), list) or not scenario["panels"]:
         raise ValueError(f"Invalid scenario structure: {scenario}")
 
-    logger.info(f"Generated scenario id={scenario['id']} title={scenario['title']!r}")
+    logger.info(f"Generated scenario id={scenario['id']} title={scenario['title']!r}, image_style={scenario['image_style']}")
     return scenario
 
 
