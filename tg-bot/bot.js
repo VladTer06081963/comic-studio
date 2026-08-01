@@ -158,6 +158,7 @@ function getScenarioButtons(sc, status) {
   } else if (status === 'published') {
     buttons.push([Markup.button.callback('🎨 Повторить рендер', `render:${sc.id}`)]);
   }
+  buttons.push([Markup.button.callback('🗑 Удалить', `confirm_delete:${sc.id}`)]);
   return Markup.inlineKeyboard(buttons);
 }
 
@@ -572,6 +573,67 @@ bot.action(/^view:(.+)$/, async (ctx) => {
   if (!found) return ctx.answerCbQuery('Сценарий не найден');
   ctx.answerCbQuery();
   await sendScenarioView(ctx, found.scenario, found.status);
+});
+
+bot.action(/^confirm_delete:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+
+  ctx.answerCbQuery('⚠️ Подтверждение');
+
+  const confirmKeyboard = Markup.inlineKeyboard([
+    [
+      Markup.button.callback('✅ Да, удалить', `delete:${id}`),
+      Markup.button.callback('❌ Отмена', `cancel_delete:${id}`),
+    ],
+  ]);
+
+  try {
+    await ctx.editMessageReplyMarkup(confirmKeyboard);
+  } catch (e) {
+    await ctx.reply(`⚠️ <b>Точно удалить сценарий <code>${escapeHtml(id)}</code>?</b>`, {
+      parse_mode: 'HTML',
+      ...confirmKeyboard
+    });
+  }
+});
+
+bot.action(/^delete:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+
+  ctx.answerCbQuery('🗑 Удаляю...');
+
+  try {
+    const url = process.env.WEB_API_URL || 'http://127.0.0.1:3000';
+    const resp = await fetch(`${url}/api/scenarios/${id}`, { method: 'DELETE' });
+    const data = await resp.json();
+
+    if (data.ok) {
+      await ctx.editMessageText(`🗑 <b>Сценарий <code>${escapeHtml(id)}</code> удалён.</b>`, { parse_mode: 'HTML' });
+    } else {
+      await ctx.answerCbQuery(`❌ Ошибка: ${data.error}`);
+    }
+  } catch (err) {
+    await ctx.reply(`❌ <b>Ошибка удаления:</b>\n<code>${escapeHtml(err.message)}</code>`, { parse_mode: 'HTML' });
+  }
+});
+
+bot.action(/^cancel_delete:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  ctx.answerCbQuery('Отменено');
+
+  if (found) {
+    await sendScenarioView(ctx, found.scenario, found.status);
+  } else {
+    await ctx.reply(`❌ Сценарий не найден.`, { parse_mode: 'HTML' });
+  }
 });
 
 bot.action(/^approve:(.+)$/, async (ctx) => {

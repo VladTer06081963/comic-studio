@@ -134,6 +134,42 @@ app.post('/api/scenarios/:id/approve', (req, res) => {
   res.json({ ok: true, id, status: 'approved' });
 });
 
+// API: delete scenario — removes scenario file + comic + panels
+app.delete('/api/scenarios/:id', (req, res) => {
+  const id = req.params.id;
+
+  // Find scenario in any status
+  let scPath = null;
+  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
+    const p = path.join(DATA_DIR, 'scenarios', status, `${id}.json`);
+    if (fs.existsSync(p)) {
+      scPath = p;
+      break;
+    }
+  }
+
+  if (!scPath) return res.status(404).json({ error: 'Not found' });
+
+  // Remove scenario file
+  fs.unlinkSync(scPath);
+
+  // Remove comic file + panels directory
+  const comicPng = path.join(DATA_DIR, 'comics', `${id}.png`);
+  if (fs.existsSync(comicPng)) fs.unlinkSync(comicPng);
+
+  const panelsDir = path.join(DATA_DIR, 'comics', id);
+  if (fs.existsSync(panelsDir)) {
+    fs.rmSync(panelsDir, { recursive: true, force: true });
+  }
+
+  // Remove raw copy
+  const rawPng = path.join(DATA_DIR, 'comics', 'raw', `${id}.png`);
+  if (fs.existsSync(rawPng)) fs.unlinkSync(rawPng);
+
+  console.log(`🗑 Deleted scenario ${id}`);
+  res.json({ ok: true, id });
+});
+
 // API: feedback — добавить правку
 app.post('/api/scenarios/:id/feedback', (req, res) => {
   const id = req.params.id;

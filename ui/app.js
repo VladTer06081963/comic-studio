@@ -29,6 +29,46 @@ function getFeedbackBadge(count) {
 
 // Edit Modal Logic
 let currentEditId = null;
+let currentDeleteId = null;
+
+function openDeleteModal(id) {
+  currentDeleteId = id;
+  document.getElementById('delete-id').textContent = id;
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+
+function closeDeleteModal() {
+  currentDeleteId = null;
+  document.getElementById('delete-modal').classList.add('hidden');
+}
+
+document.getElementById('delete-cancel')?.addEventListener('click', closeDeleteModal);
+document.getElementById('delete-confirm')?.addEventListener('click', async () => {
+  if (!currentDeleteId) return;
+  const btn = document.getElementById('delete-confirm');
+  btn.disabled = true;
+  btn.textContent = '⏳ Удаление...';
+  try {
+    const res = await fetch(`/api/scenarios/${currentDeleteId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) {
+      closeDeleteModal();
+      const activeTab = document.querySelector('nav button.active').dataset.tab;
+      loadTab(activeTab);
+    } else {
+      alert(`Ошибка: ${data.error}`);
+    }
+  } catch (err) {
+    alert(`Ошибка: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🗑 Удалить';
+  }
+});
+
+document.getElementById('delete-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'delete-modal') closeDeleteModal();
+});
 
 function openEditModal(id) {
   currentEditId = id;
@@ -154,9 +194,11 @@ function scenarioCard(sc, status) {
       <button class="approve" data-id="${sc.id}" data-action="approve">✅ Утвердить</button>
       <button class="reject" data-id="${sc.id}" data-action="reject">❌ Отклонить</button>
       <button class="edit" data-id="${sc.id}" data-action="edit">✏️ Редактировать</button>
+      <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
     </div>` : `
     <div class="actions">
       <button class="edit" data-id="${sc.id}" data-action="edit">✏️ Редактировать</button>
+      <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
     </div>`;
   return `
     <div class="card">
@@ -171,6 +213,11 @@ function attachHandlers(status) {
   // Edit button works for all statuses
   document.querySelectorAll(`#${status}-list .actions button.edit`).forEach(btn => {
     btn.addEventListener('click', () => openEditModal(btn.dataset.id));
+  });
+
+  // Delete button
+  document.querySelectorAll(`#${status}-list .actions button.delete`).forEach(btn => {
+    btn.addEventListener('click', () => openDeleteModal(btn.dataset.id));
   });
 
   // Approve/reject only for draft

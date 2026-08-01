@@ -133,6 +133,19 @@
     </section>
   </main>
 
+  <!-- Delete Confirm Modal -->
+  <div id="delete-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>🗑 Удалить сценарий?</h3>
+      <p>Сценарий: <code id="delete-id"></code></p>
+      <p class="warning">⚠️ Это действие нельзя отменить.<br>Удалятся также комиксы и панели.</p>
+      <div class="modal-actions">
+        <button id="delete-cancel">Отмена</button>
+        <button id="delete-confirm">🗑 Удалить</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Edit Modal -->
   <div id="edit-modal" class="modal hidden">
     <div class="modal-content">

@@ -220,8 +220,11 @@ h2 { margin-top: 0; }
   color: var(--text);
 }
 #edit-save { background: var(--accent); color: white; border-color: var(--accent); }
+#delete-confirm { background: var(--red); color: white; border-color: var(--red); }
+.warning { color: var(--red); }
 
 .actions button.edit { background: var(--accent2); color: black; border-color: var(--accent2); }
+.actions button.delete { background: var(--red); color: white; border-color: var(--red); }
 
 .feedback-badge {
   display: inline-block;
