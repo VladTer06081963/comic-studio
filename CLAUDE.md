@@ -97,6 +97,17 @@ bash cron/nightly.sh
 - Новая соцсеть → `publisher/<platform>.js` с экспортом `publish(comic)`
 - Новый LLM-провайдер → `py/scenario/writer.py` параметризовать
 
+## Фиксация задач
+
+Когда пользователь говорит **"фиксируем"**, **"фиксация"**, **"зафиксируй"** — выполни процедуру:
+
+1. **Спросить тему задачи** если не ясно
+2. **Создать аудит:** `summary/audit/<NNN>_<slug>.md`
+3. **Создать таски:** `summary/tasks/<NNN>_<slug>.md`
+4. **Закоммитить:** `git add ... && git commit -m "..." && git push`
+
+**Если есть OpenSpec change** — архивировать в `openspec/changes/archive/YYYY-MM-DD-<name>/`
+
 ## НЕ делать
 
 - ❌ Рендерить без утверждения
