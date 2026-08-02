@@ -4,6 +4,7 @@
  * Provides:
  *   GET /comics/:id.html           → data/comics/<id>.html   (text/html)
  *   GET /comics/:id/fonts/:name    → data/comics/<id>/fonts/<name> (font/woff2)
+ *   GET /comics/:id/:name          → data/comics/<id>/panel_*.png (image/png)
  *
  * Spec: `web-comic-rendering` → Requirements: HTML endpoint, Static font serving,
  *                                  Filesystem safety.
@@ -11,7 +12,7 @@
  * Безопасность:
  *   - safeResolve против path traversal (`../`, encoded separators, absolute paths)
  *   - `scenarioId` валидация для `<id>` (regex ^[A-Za-z0-9_-]{4,64}$)
- *   - Имя font-файла ограничено safe-набором (woff2 only, no path components)
+ *   - Имя font/panel ограничено safe-набором (regex whitelist)
  */
 import express from 'express';
 import fs from 'fs';
@@ -56,11 +57,13 @@ export function htmlStaticRouter({ config }) {
     return res.sendFile(path.resolve(filePath));
   }));
 
-  // ── GET /comics/:id/panels/:name ───────────────────────────────────────────
+  // ── GET /comics/:id/:name (panel images) ───────────────────────────────────
   // Панели лежат в `data/comics/<id>/panel_N.png` (поддиректория рядом с <id>.html).
   // HTML ссылается на `./<id>/panel_*.png` — этот endpoint отдаёт файлы.
+  // Регистрируется ПОСЛЕ `/comics/:id/fonts/:name` чтобы более специфичный
+  // fonts route имел приоритет.
   const PANEL_RE = /^panel_[1-9][0-9]?\.png$/;
-  router.get('/comics/:id/panels/:name', asyncRoute(async (req, res, next) => {
+  router.get('/comics/:id/:name', asyncRoute(async (req, res, next) => {
     let id;
     try {
       id = scenarioId(req.params.id);
@@ -69,7 +72,8 @@ export function htmlStaticRouter({ config }) {
     }
     const name = req.params.name;
     if (!PANEL_RE.test(name)) {
-      return next(badRequest('INVALID_PANEL_NAME', 'Panel file name must match panel_[1-9][0-9]?.png'));
+      // Не панель → передаём дальше (другие endpoints)
+      return next();
     }
     let filePath;
     try {

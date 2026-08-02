@@ -194,39 +194,39 @@ test('HTML body uses relative paths for fonts and panels', async () => {
   } finally { await server.close(); ctx.project.cleanup(); }
 });
 
-test('GET /comics/<id>/panels/<name> returns 200 image/png', async () => {
+test('GET /comics/<id>/<panel_name> returns 200 image/png', async () => {
   const ctx = makeTestRuntime();
   writeHtml(ctx.project.dataRoot, 'panel-0001');
   writePanel(ctx.project.dataRoot, 'panel-0001', 'panel_1.png');
   writePanel(ctx.project.dataRoot, 'panel-0001', 'panel_2.png');
   const server = await listen(ctx.app);
   try {
-    const response = await rawFetch(`${server.baseUrl}/comics/panel-0001/panels/panel_1.png`);
+    const response = await rawFetch(`${server.baseUrl}/comics/panel-0001/panel_1.png`);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'image/png');
   } finally { await server.close(); ctx.project.cleanup(); }
 });
 
-test('GET /comics/<id>/panels/nonexistent.png returns 404', async () => {
+test('GET /comics/<id>/<missing_panel>.png returns 404 PANEL_NOT_FOUND', async () => {
   const ctx = makeTestRuntime();
   writeHtml(ctx.project.dataRoot, 'panel-0002');
   // Valid name format but file doesn't exist
   const server = await listen(ctx.app);
   try {
-    const result = await jsonFetch(`${server.baseUrl}/comics/panel-0002/panels/panel_99.png`);
+    const result = await jsonFetch(`${server.baseUrl}/comics/panel-0002/panel_99.png`);
     assert.equal(result.response.status, 404);
     assert.equal(result.body.error.code, 'PANEL_NOT_FOUND');
   } finally { await server.close(); ctx.project.cleanup(); }
 });
 
-test('GET /comics/<id>/panels rejects invalid names (path traversal)', async () => {
+test('GET /comics/<id>/<bogus_name> falls through (404)', async () => {
   const ctx = makeTestRuntime();
   writeHtml(ctx.project.dataRoot, 'panel-0003');
   writePanel(ctx.project.dataRoot, 'panel-0003', 'panel_1.png');
   const server = await listen(ctx.app);
   try {
-    // path traversal in panel name → reject
-    const response = await rawFetch(`${server.baseUrl}/comics/panel-0003/panels/..%2F..%2Fetc%2Fpasswd.png`);
-    assert.notEqual(response.status, 200);
+    // Имя файла не соответствует panel_N.png → next() → notFoundMiddleware → 404
+    const response = await rawFetch(`${server.baseUrl}/comics/panel-0003/not-a-panel.txt`);
+    assert.equal(response.status, 404);
   } finally { await server.close(); ctx.project.cleanup(); }
 });
