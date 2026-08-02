@@ -1,11 +1,12 @@
 import { conflict, notFound } from './errors.js';
-
 export class LifecycleService {
-  constructor({ store, clock = () => new Date(), minSeed = 0, maxSeed = 2_147_483_647 } = {}) {
+  constructor({ store, clock = () => new Date(), minSeed = 0, maxSeed = 2_147_483_647, maxFeedbackCount = 20, logger } = {}) {
     this.store = store;
     this.clock = clock;
     this.minSeed = minSeed;
     this.maxSeed = maxSeed;
+    this.maxFeedbackCount = maxFeedbackCount;
+    this.logger = logger;
   }
 
   approve(id) {
@@ -29,19 +30,74 @@ export class LifecycleService {
   }
 
   async recordFeedback(id, text) {
-    return this.store.update(id, (record, state) => {
-      if (state === 'published') throw conflict('PUBLISHED_IMMUTABLE', 'Published scenarios are read-only; create a remix');
-      record.feedback = Array.isArray(record.feedback) ? record.feedback : [];
-      record.feedback.push({ ts: this.clock().toISOString(), text, source: 'web-ui', status: 'pending_revision' });
-      record.revision_status = 'feedback_recorded';
-      return record;
+    const scenario = this.store.find(id);
+    if (!scenario) throw notFound('SCENARIO_NOT_FOUND', 'Scenario not found');
+    if (scenario.state === 'published') {
+      throw conflict('PUBLISHED_IMMUTABLE', 'Published scenarios are read-only; use remix', { remix_endpoint: `/api/scenarios/${id}/remix` });
+    }
+    throw conflict('REVISION_REQUIRED', 'Legacy feedback endpoint is deprecated; call revise instead', {
+      revise_endpoint: `/api/scenarios/${id}/revise`,
+      state: scenario.state,
     });
+  }
+
+  async revise({ id, requestId, feedback, sourceContext, imageStyle, jobManager }) {
+    const scenario = this.store.find(id);
+    if (!scenario) throw notFound('SCENARIO_NOT_FOUND', 'Scenario not found');
+    if (scenario.state === 'published') {
+      throw conflict('PUBLISHED_IMMUTABLE', 'Published scenarios are read-only; create a remix instead', {
+        remix_endpoint: `/api/scenarios/${id}/remix`,
+      });
+    }
+    if (!['approved', 'rendered'].includes(scenario.state)) {
+      throw conflict('APPROVAL_REQUIRED', 'Scenario must be approved or rendered before revision');
+    }
+    if (!Array.isArray(feedback) || feedback.length === 0) {
+      throw conflict('REVISION_FEEDBACK_REQUIRED', 'Revision request requires non-empty feedback list');
+    }
+    if (feedback.length > this.maxFeedbackCount) {
+      throw conflict('REVISION_FEEDBACK_LIMIT', `Revision supports at most ${this.maxFeedbackCount} feedback items`);
+    }
+    const revisionRequestId = requestId;
+    if (scenario.state === 'rendered') {
+      this.store.moveToLegacyStaging(id);
+    }
+    const revoked = await this.store.revokeApproval(id, { requestId: revisionRequestId, reason: 'revision' });
+    const safeSourcePreview = (scenario.record.context || sourceContext || '').slice(0, 2000);
+    const job = jobManager.enqueueRevision({
+      scenarioId: id,
+      scenarioPath: `${this.store.dataRoot}/scenarios/draft/${id}.json`,
+      feedback,
+      sourceContext: sourceContext || scenario.record.context || '',
+      sourceContextPreview: safeSourcePreview,
+      requestId: revisionRequestId,
+      revisionKind: 'standard',
+    });
+    this.logger?.info('revision.requested', {
+      request_id: requestId,
+      scenario_id: id,
+      revision_request_id: revisionRequestId,
+      revision_source: scenario.state,
+      feedback_count: Array.isArray(feedback) ? feedback.length : 0,
+      job_id: job.id,
+    });
+    return { record: revoked.record, job };
+  }
+
+  remix(sourceId, overrides = {}, { requestId } = {}) {
+    const result = this.store.createRemix(sourceId, overrides);
+    this.logger?.info('remix.created', {
+      request_id: requestId,
+      scenario_id: result.record.id,
+      source_id: sourceId,
+    });
+    return { record: result.record, path: result.path };
   }
 
   renderPolicy(id, mode) {
     const candidate = this.store.find(id);
     if (!candidate) throw notFound('SCENARIO_NOT_FOUND', 'Scenario not found');
-    if (candidate.state === 'published') throw conflict('PUBLISHED_IMMUTABLE', 'Published scenarios are read-only; create a remix');
+    if (candidate.state === 'published') throw conflict('PUBLISHED_IMMUTABLE', 'Published scenarios are read-only; create a remix', { remix_endpoint: `/api/scenarios/${id}/remix` });
     if (candidate.state === 'draft' || candidate.state === 'rejected') {
       throw conflict('APPROVAL_REQUIRED', 'Scenario must be approved before render');
     }

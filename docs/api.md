@@ -63,7 +63,21 @@ draft ──approve──▶ approved ──initial render──▶ rendered ─
                                                    └──explicit rerender──▶ rendered
 ```
 
-`published` is read-only in the Web API. A future `scenario-revision-and-remix` change will create new drafts from published records.
+Revision flow (approved/rendered only):
+
+```text
+approved|rendered ──POST /revise──▶ draft (revision_queued)
+                                  ├─LLM ok──▶ draft (revision_succeeded) ──approve──▶ approved
+                                  └─LLM fail─▶ draft (revision_failed) — scenario remains unapproved
+```
+
+Published remix flow (published only):
+
+```text
+published ──POST /remix──▶ new draft (remix_of: <source_id>)
+```
+
+`published` is read-only in the Web API. Updates always create a new draft via the remix endpoint.
 
 ## Scenario endpoints
 
@@ -167,7 +181,62 @@ Standalone seed changes are allowed only for `draft` and `approved`. For `render
 {"text": "Сделать финал смешнее"}
 ```
 
-Current transitional behavior stores a timestamped revision request and returns `status=feedback_recorded`. It does **not** regenerate prompts yet. Published scenarios reject feedback.
+The legacy feedback endpoint now returns `409 REVISION_REQUIRED` for non-published scenarios and `409 PUBLISHED_IMMUTABLE` for published. Use `POST /api/scenarios/:id/revise` for LLM regeneration of `approved`/`rendered` records and `POST /api/scenarios/:id/remix` for new drafts from `published` records. No feedback is appended silently.
+
+### `POST /api/scenarios/:id/revise`
+
+```json
+{
+  "feedback": [{"text": "Сделать финал мягче", "source": "web-ui"}],
+  "source_context": "optional bounded source text",
+  "image_style": "comic"
+}
+```
+
+Allowed only for `approved` or `rendered`. The server atomically revokes approval (`approved|rendered → draft`), stages rendered artifacts in `data/.staging/legacy/<id>-<ts>/` for `rendered` sources, and enqueues a `revision` job. Returns `202`:
+
+```json
+{
+  "ok": true,
+  "id": "abc12345",
+  "status": "draft",
+  "job": {"id": "job-id", "type": "revision", "status": "queued", "revision_kind": "standard", "feedback_count": 1},
+  "revision_endpoint": "/api/scenarios/abc12345/revise",
+  "request_id": "uuid"
+}
+```
+
+Errors:
+
+- `400 REVISION_FEEDBACK_LIMIT` — more than `WEB_MAX_REVISION_FEEDBACK_COUNT` (default 20) items;
+- `400 REVISION_FEEDBACK_REQUIRED` — empty feedback list;
+- `409 APPROVAL_REQUIRED` — scenario is `draft`/`rejected`;
+- `409 PUBLISHED_IMMUTABLE` — scenario is `published` (use `/remix` instead);
+- `409 BUSY` — another render or revision job is already active;
+- `409 REVISION_ALREADY_RUNNING` — scenario is already in `revision_queued`/`revision_running`.
+
+### `POST /api/scenarios/:id/remix`
+
+```json
+{"title": "Новое название", "image_style": "anime", "style": "star", "seed": 12345}
+```
+
+Allowed only for `published`. Creates a new draft with a new ID, copies panels/captions/style metadata from the source, sets `remix_of` and `remix_created_at`, and never mutates the source record. Returns `201`:
+
+```json
+{
+  "ok": true,
+  "id": "newid01",
+  "status": "draft",
+  "remix_of": "abc12345",
+  "revision_endpoint": "/api/scenarios/newid01/revise",
+  "request_id": "uuid"
+}
+```
+
+Errors:
+
+- `409 REMIX_REQUIRES_PUBLISHED` — scenario is not `published`.
 
 ### `DELETE /api/scenarios/:id?confirm=true`
 
@@ -185,15 +254,26 @@ Returns persisted jobs ordered newest first.
 {
   "job": {
     "id": "job-id",
+    "type": "render|revision",
     "scenario_id": "abc12345",
+    "mode": "initial|rerender",
+    "revision_kind": "standard",
+    "source_context_preview": "bounded source preview up to 2000 chars",
+    "feedback_count": 3,
     "status": "queued|running|succeeded|failed|interrupted",
-    "request_id": "originating-request-id"
+    "created_at": "2026-08-02T10:00:00Z",
+    "started_at": "2026-08-02T10:00:01Z",
+    "finished_at": "2026-08-02T10:00:30Z",
+    "request_id": "originating-request-id",
+    "seed": 42,
+    "result": {"scenario_id": "abc12345", "comic_path": "/safe/path.png", "render_revision": 1},
+    "error": {"code": "REVISION_FAILED", "message": "..."}
   },
   "request_id": "poll-request-id"
 }
 ```
 
-Queued/running jobs left by a restart become `interrupted`; paid render work is not replayed automatically.
+Queued/running jobs left by a restart become `interrupted`; paid render and revision work is not replayed automatically. `request_id` correlates the job with the originating `revision.requested`/`render.requested` log entries.
 
 ## Comics and health
 
@@ -211,6 +291,18 @@ Defaults can be configured through `.env`:
 - content: 50,000 characters;
 - feedback: 5,000 characters;
 - seed: integer `0..2147483647`.
+
+## Revision and remix configuration
+
+| Env key | Default | Purpose |
+|---|---|---|
+| `WEB_REVISION_TIMEOUT_MS` | `180000` | Process runner timeout for `scripts/revise_scenario.py` |
+| `WEB_REVISION_OUTPUT_LIMIT` | `10485760` | stdout/stderr cap for revision process |
+| `WEB_MAX_REVISION_FEEDBACK_COUNT` | `20` | Bounded history accepted by `POST /api/scenarios/:id/revise` |
+| `WEB_MAX_REVISION_HISTORY` | `10` | Maximum entries kept in `scenario.revision_history` |
+| `WEB_LEGACY_RETENTION_MS` | `604800000` (7 d) | Retention for `data/.staging/legacy/` after a rendered scenario is revoked |
+
+`/api/ready` does not change behaviour for revisions — readiness still reports `data_root`, `python`, security and `shutting_down` checks without invoking LLM or image providers.
 
 ## Tests
 

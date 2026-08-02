@@ -9,9 +9,10 @@
 1. **Никогда не выполнять initial render без persisted approval.** Допустимые ручные каналы: авторизованный Telegram или local/authenticated Web UI.
 2. **Всегда проверять approval дважды.** Перед запуском и непосредственно перед provider request сценарий должен находиться в `data/scenarios/approved/` со status `approved`.
 3. **Идемпотентность.** Использовать scenario ID и seed; для `rendered` допускается только explicit staging rerender.
-4. **Published immutable.** Не изменять, не удалять и не рендерить повторно `published`; будущие изменения создают новый remix draft.
-5. **Логировать всё.** Python и Web пишут в `data/logs/YYYY-MM-DD.log` и stdout без секретов.
-6. **Тесты без платных side effects.** Mocked suites не должны вызывать MiniMax, публикацию или Telegram.
+4. **Revision и remix — единственный путь обновления.** `approved|rendered` редактируется через `POST /api/scenarios/:id/revise` (LLM-регенерация с atomic revoke). `published` редактируется через `POST /api/scenarios/:id/remix` (новый draft с `remix_of`).
+5. **Published immutable.** Не изменять, не удалять и не рендерить повторно `published`; будущие изменения создают новый remix draft.
+6. **Логировать всё.** Python и Web пишут в `data/logs/YYYY-MM-DD.log` и stdout без секретов. Revision и remix эмитят `revision.requested`, `revision.succeeded`, `revision.failed`, `remix.created` с `request_id`, `scenario_id` и `revision_request_id`.
+7. **Тесты без платных side effects.** Mocked suites не должны вызывать MiniMax, публикацию или Telegram.
 
 ## Структура модулей
 
@@ -87,7 +88,7 @@ bash cron/nightly.sh --dry-run
 1. Telegram принимает действия только от configured `TELEGRAM_CHAT_ID`.
 2. Web approval разрешён в local mode или authenticated remote mode.
 3. Approve атомарно переводит `draft → approved`; reject — `draft → rejected`.
-4. Кнопка «Запросить правку» пока только сохраняет `feedback_recorded`; LLM regeneration — отдельный OpenSpec follow-up.
+4. Revision запускает LLM и атомарно переводит `approved|rendered → draft` с `revision_queued`; remix создаёт новый draft с `remix_of` для `published`. Legacy `POST /api/scenarios/:id/feedback` возвращает `REVISION_REQUIRED` / `PUBLISHED_IMMUTABLE` и не записывает feedback.
 5. Approval/feedback в текущей реализации не обновляют Notion lifecycle status автоматически.
 
 ## Cron-режим
@@ -123,3 +124,4 @@ bash cron/nightly.sh --dry-run
 - ❌ Менять существующие файлы в `data/archive/`
 - ❌ Коммитить `.env`, токены или ключи
 - ❌ Запускать live provider calls в mocked test suite
+- ❌ Молча принимать legacy feedback: возвращать `REVISION_REQUIRED`/`PUBLISHED_IMMUTABLE` с structured `revise_endpoint`/`remix_endpoint`

@@ -52,13 +52,14 @@ export class FakeRunner {
   shutdown() { this.stopped = true; }
 }
 
-export function writeScenario(dataRoot, status, scenario) {
+export function writeScenario(dataRoot, status, scenario = {}) {
   const dir = path.join(dataRoot, 'scenarios', status);
   fs.mkdirSync(dir, { recursive: true });
+  const { status: _ignored, ...rest } = scenario;
   const record = {
     title: 'Test scenario', tone: 'funny', style: 'bubble', image_style: 'comic', layout: 'comic',
     panels: [{ n: 1, prompt: 'A safe prompt', caption: 'Тест' }], created_at: '2026-08-02T00:00:00Z',
-    ...scenario, status,
+    ...rest, status,
   };
   fs.writeFileSync(path.join(dir, `${record.id}.json`), `${JSON.stringify(record, null, 2)}\n`);
   return record;
@@ -85,9 +86,22 @@ export function makeTestRuntime(options = {}) {
   const clock = options.clock || fakeClock();
   const runner = options.runner || new FakeRunner();
   const store = new ScenarioStore({ dataRoot: config.dataRoot, logger, clock, idGenerator: sequenceId('trash') });
-  const lifecycle = new LifecycleService({ store, clock, minSeed: config.minSeed, maxSeed: config.maxSeed });
+  const lifecycle = new LifecycleService({ store, clock, logger, minSeed: config.minSeed, maxSeed: config.maxSeed });
   const jobStore = new JobStore({ dataRoot: config.dataRoot, logger, clock, idGenerator: sequenceId('job') });
-  const jobManager = new JobManager({ config, jobStore, runner, logger });
+  const jobManager = new JobManager({ config, jobStore, runner, logger, onRevisionComplete: async ({ job, parsed, success, error, interrupted = false }) => {
+    try {
+      if (interrupted) return;
+      if (success && parsed && parsed.id) {
+        const recordPath = path.join(options.project?.dataRoot || config.dataRoot, 'scenarios', 'draft', `${parsed.id}.json`);
+        if (fs.existsSync(recordPath)) {
+          const record = JSON.parse(fs.readFileSync(recordPath, 'utf8'));
+          await store.applyRevision(parsed.id, record, { requestId: job.request_id, feedbackCount: parsed.feedback_count });
+        }
+      } else if (error) {
+        await store.markRevisionFailed(job.scenario_id, { requestId: job.request_id, errorCode: error.code || 'REVISION_FAILED', message: error.message || 'Revision failed' });
+      }
+    } catch {}
+  } });
   let stopping = false;
   const runtime = {
     config, logger, store, lifecycle, runner, jobStore, jobManager,

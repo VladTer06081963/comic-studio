@@ -71,6 +71,11 @@ export function loadConfig(env = process.env, overrides = {}) {
     processOutputLimit: overrides.processOutputLimit ?? intValue(env, 'WEB_PROCESS_OUTPUT_LIMIT', 10 * 1024 * 1024, { min: 1024, max: 100 * 1024 * 1024 }),
     jobRetentionMs: overrides.jobRetentionMs ?? intValue(env, 'WEB_JOB_RETENTION_MS', 7 * 24 * 60 * 60 * 1000, { min: 1000 }),
     artifactRetentionMs: overrides.artifactRetentionMs ?? intValue(env, 'WEB_ARTIFACT_RETENTION_MS', 24 * 60 * 60 * 1000, { min: 1000 }),
+    legacyRetentionMs: overrides.legacyRetentionMs ?? intValue(env, 'WEB_LEGACY_RETENTION_MS', 7 * 24 * 60 * 60 * 1000, { min: 1000 }),
+    revisionTimeoutMs: overrides.revisionTimeoutMs ?? intValue(env, 'WEB_REVISION_TIMEOUT_MS', 180_000, { min: 100, max: 3_600_000 }),
+    revisionOutputLimit: overrides.revisionOutputLimit ?? intValue(env, 'WEB_REVISION_OUTPUT_LIMIT', 10 * 1024 * 1024, { min: 1024, max: 100 * 1024 * 1024 }),
+    maxRevisionFeedbackCount: overrides.maxRevisionFeedbackCount ?? intValue(env, 'WEB_MAX_REVISION_FEEDBACK_COUNT', 20, { min: 1, max: 200 }),
+    maxRevisionHistory: overrides.maxRevisionHistory ?? intValue(env, 'WEB_MAX_REVISION_HISTORY', 10, { min: 1, max: 50 }),
     shutdownGraceMs: overrides.shutdownGraceMs ?? intValue(env, 'WEB_SHUTDOWN_GRACE_MS', 15_000, { min: 100, max: 300_000 }),
   });
 }

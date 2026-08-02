@@ -115,20 +115,50 @@ Candidate panels создаются в staging. Текущий comic замен�
 
 Standalone seed mutation разрешена только для `draft`/`approved`. Для `rendered` новый seed передаётся вместе с rerender.
 
-## 6. Запросы на правку
+## 6. Revision и remix
 
-Текущий Web endpoint:
+Revision запускает LLM-регенерацию для `approved` или `rendered` сценариев
+и атомарно отзывает approval до вызова модели:
 
 ```http
-POST /api/scenarios/<id>/feedback
+POST /api/scenarios/<id>/revise
 Content-Type: application/json
 
-{"text":"Сделать концовку смешнее"}
+{
+  "feedback": [
+    {"text": "Сделать концовку мягче", "source": "web-ui"}
+  ],
+  "source_context": "optional bounded source text"
+}
 ```
 
-Он сохраняет timestamped revision request и возвращает `feedback_recorded`. Он пока **не меняет** prompts/captions и не запускает LLM. Настоящая regeneration и повторный approval описаны в `docs/roadmap.md`.
+Server возвращает `202 Accepted` с `job.id`, `revision_kind`, `feedback_count`
+и `request_id`. После LLM-успеха scenario остаётся в `draft` со статусом
+`revision_succeeded` и требует повторного approval. На failure —
+`revision_failed` с bounded `revision_error`. В обоих случаях
+`scenario.feedback` сохраняется.
 
-Для `published` feedback блокируется: опубликованный record неизменяем.
+Для `rendered` rendered artifacts сначала перемещаются в
+`data/.staging/legacy/<id>-<ts>/` с manifest, и только затем отзывается
+approval. Очистка legacy staging контролируется
+`WEB_LEGACY_RETENTION_MS` (default 7 дней).
+
+Remix создаёт новый draft из `published` и никогда не меняет source record:
+
+```http
+POST /api/scenarios/<id>/remix
+Content-Type: application/json
+
+{"title": "Новое название", "image_style": "anime", "seed": 12345}
+```
+
+Возвращает `201 Created` с `id` нового draft, `remix_of` и
+`revision_endpoint` для следующего шага.
+
+Legacy `POST /api/scenarios/<id>/feedback` остаётся для
+backward-compatible UI, но возвращает `409 REVISION_REQUIRED` для
+не-published и `409 PUBLISHED_IMMUTABLE` для published, не записывая
+`scenario.feedback`.
 
 ## 7. Delete
 

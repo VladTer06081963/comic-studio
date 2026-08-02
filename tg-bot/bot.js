@@ -148,15 +148,19 @@ function getScenarioButtons(sc, status) {
   } else if (status === 'approved') {
     buttons.push([
       Markup.button.callback('🎨 Запустить рендер', `render:${sc.id}`),
-      Markup.button.callback('✏️ Редактировать', `edit:${sc.id}`),
+      Markup.button.callback('🔄 Revision', `revise:${sc.id}`),
     ]);
   } else if (status === 'rendered') {
     buttons.push([
       Markup.button.callback('🚀 Опубликовать', `publish:${sc.id}`),
       Markup.button.callback('🎨 Повторить рендер', `render:${sc.id}`),
+      Markup.button.callback('🔄 Revision', `revise:${sc.id}`),
     ]);
   } else if (status === 'published') {
-    buttons.push([Markup.button.callback('🎨 Повторить рендер', `render:${sc.id}`)]);
+    buttons.push([
+      Markup.button.callback('🎨 Remix', `remix:${sc.id}`),
+      Markup.button.callback('🎨 Повторить рендер', `render:${sc.id}`),
+    ]);
   }
   buttons.push([Markup.button.callback('🗑 Удалить', `confirm_delete:${sc.id}`)]);
   return Markup.inlineKeyboard(buttons);
@@ -703,9 +707,47 @@ bot.action(/^edit:(.+)$/, async (ctx) => {
 bot.action(/^edit_feedback:(.+)$/, async (ctx) => {
   if (!assertAuthorized(ctx)) return;
   const id = ctx.match[1];
-  userState.set(ctx.from.id, { action: 'awaiting_edit_feedback', scenarioId: id });
+  userState.set(ctx.from.id, { action: 'awaiting_revise_feedback', scenarioId: id });
   ctx.answerCbQuery('Жду текст');
-  await ctx.reply(`💬 Отправьте текст правки для сценария <code>${escapeHtml(id)}</code>:\n\n<i>(просто напиши в чат — будет сохранено)</i>`, { parse_mode: 'HTML' });
+  await ctx.reply(`🔄 Отправьте текст revision для сценария <code>${escapeHtml(id)}</code>:\n\n<i>(просто напиши в чат — будет отправлен в LLM)</i>`, { parse_mode: 'HTML' });
+});
+
+bot.action(/^revise:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+  if (!['approved', 'rendered'].includes(found.status)) {
+    return ctx.answerCbQuery('Revision только для approved/rendered');
+  }
+  ctx.answerCbQuery('🔄 Revision');
+  userState.set(ctx.from.id, { action: 'awaiting_revise_feedback', scenarioId: id });
+  await ctx.reply(`🔄 Отправьте текст revision для <code>${escapeHtml(id)}</code>:\n\nПосле завершения потребуется повторный approval.`, { parse_mode: 'HTML' });
+});
+
+bot.action(/^remix:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const id = ctx.match[1];
+  const found = findScenario(id);
+  if (!found) return ctx.answerCbQuery('Сценарий не найден');
+  if (found.status !== 'published') {
+    return ctx.answerCbQuery('Remix только из published');
+  }
+  try {
+    const response = await fetch(`${process.env.WEB_API_URL || 'http://127.0.0.1:3000'}/api/scenarios/${id}/remix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    if (response.ok) {
+      await ctx.editMessageText(`🎨 <b>Remix создан.</b>\n\nID: <code>${escapeHtml(data.id)}</code>\nSource: <code>${escapeHtml(id)}</code>`, { parse_mode: 'HTML' });
+    } else {
+      await ctx.answerCbQuery(`❌ ${data?.error?.code || 'remix failed'}`);
+    }
+  } catch (error) {
+    await ctx.reply(`❌ <b>Ошибка remix:</b> <code>${escapeHtml(error.message)}</code>`, { parse_mode: 'HTML' });
+  }
 });
 
 bot.action(/^edit_seed:(.+)$/, async (ctx) => {
@@ -783,6 +825,10 @@ bot.action(/^render:(.+)$/, async (ctx) => {
   const found = findScenario(id);
   if (!found) return ctx.answerCbQuery('Сценарий не найден');
 
+  if (found.status !== 'approved') {
+    return ctx.answerCbQuery('❌ Сценарий должен быть утвержден (approved) для рендеринга', { show_alert: true });
+  }
+
   ctx.answerCbQuery('🎨 Запускаю рендер...');
   const progressMsg = await ctx.reply(`🎨 <b>Запущен рендер комикса <code>${id}</code>...</b>\n\n⏳ Генерируем изображения панелей через MiniMax AI и собираем итоговый стрип. Это может занять около 1-2 минут.`, { parse_mode: 'HTML' });
 
@@ -810,6 +856,10 @@ bot.action(/^publish:(.+)$/, async (ctx) => {
   const id = ctx.match[1];
   const found = findScenario(id);
   if (!found) return ctx.answerCbQuery('Сценарий не найден');
+
+  if (found.status !== 'rendered') {
+    return ctx.answerCbQuery('❌ Сценарий должен быть отрендерен (rendered) для публикации', { show_alert: true });
+  }
 
   ctx.answerCbQuery('🚀 Публикую...');
   const progressMsg = await ctx.reply(`🚀 <b>Публикация комикса <code>${id}</code>...</b>`, { parse_mode: 'HTML' });
@@ -928,16 +978,22 @@ bot.on('text', async (ctx) => {
     userState.delete(ctx.from.id);
     return processCreateComic(ctx, text);
   }
-  if (state && typeof state === 'object' && state.action === 'awaiting_edit_feedback') {
+  if (state && typeof state === 'object' && state.action === 'awaiting_revise_feedback') {
     userState.delete(ctx.from.id);
     const id = state.scenarioId;
-    const found = findScenario(id);
-    if (found) {
-      const sc = found.scenario;
-      sc.feedback = sc.feedback || [];
-      sc.feedback.push({ ts: new Date().toISOString(), text });
-      atomicWrite(found.path, sc);
-      return ctx.reply(`📝 Правка сохранена для <code>${escapeHtml(id)}</code>!`, { parse_mode: 'HTML' });
+    try {
+      const response = await fetch(`${process.env.WEB_API_URL || 'http://127.0.0.1:3000'}/api/scenarios/${id}/revise`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedback: [{ text, source: 'tg-bot' }] }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        return ctx.reply(`🔄 <b>Revision запущен.</b> Job: <code>${escapeHtml(data.job?.id || 'n/a')}</code>`, { parse_mode: 'HTML' });
+      }
+      return ctx.reply(`❌ <b>Revision не выполнен:</b> <code>${escapeHtml(data?.error?.code || 'unknown')}</code>`, { parse_mode: 'HTML' });
+    } catch (error) {
+      return ctx.reply(`❌ <b>Ошибка revision:</b> <code>${escapeHtml(error.message)}</code>`, { parse_mode: 'HTML' });
     }
   }
 

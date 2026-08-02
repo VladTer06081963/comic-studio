@@ -55,7 +55,7 @@ Approve и reject operations SHALL выполнять conflict-safe atomic trans
 - **THEN** server возвращает `409` и не изменяет persisted record
 
 ### Requirement: Render lifecycle policy
-Render API SHALL разрешать initial render только для `approved`, SHALL требовать явное подтверждение re-render для `rendered` и MUST отклонять `draft`, `rejected` и `published` до запуска render process.
+Render API SHALL разрешать initial render только для `approved`, SHALL требовать явное подтверждение re-render для `rendered` и MUST отклонять `draft`, `rejected` и `published` до запуска render process. Render, re-render и publication MUST оставаться заблокированы до повторного approval после revision. Сервер SHALL блокировать initial render, re-render и publication с `409` error code `APPROVAL_REQUIRED`, пока scenario не вернётся в `approved` с новым `approved_at` timestamp.
 
 #### Scenario: Approved scenario starts initial render
 - **WHEN** клиент вызывает render для canonical approved scenario
@@ -64,6 +64,14 @@ Render API SHALL разрешать initial render только для `approved
 #### Scenario: Rendered scenario lacks explicit rerender mode
 - **WHEN** клиент вызывает обычный render для status `rendered` без явного rerender request
 - **THEN** server возвращает `409` с error code `RERENDER_CONFIRMATION_REQUIRED` и не запускает process
+
+#### Scenario: Render blocked after revision
+- **WHEN** scenario находится в `draft` после успешного revision
+- **THEN** server возвращает `409` с error code `APPROVAL_REQUIRED` и не создаёт render job
+
+#### Scenario: Render allowed after re-approval
+- **WHEN** scenario возвращается в `approved` после повторного approval
+- **THEN** render policy снова разрешает initial render
 
 #### Scenario: Published scenario is requested for render
 - **WHEN** клиент вызывает render или rerender для status `published`
@@ -84,16 +92,28 @@ Standalone seed mutation SHALL принимать только integer в док
 - **WHEN** клиент вызывает standalone seed mutation для status `rendered`
 - **THEN** server возвращает `409` и persisted seed остаётся связан с текущим rendered artifact
 
-### Requirement: Transitional feedback behavior
-До внедрения отдельного revision workflow feedback API SHALL принимать bounded non-empty text только как сохранённый revision request и MUST NOT сообщать, что scenario content был изменён или regenerated.
+### Requirement: Revision workflow replaces transitional feedback behavior
+Feedback API остаётся для backward-compatible feedback recording, но SHALL возвращать `409` с error code `REVISION_REQUIRED` и подсказкой вызвать revision endpoint; для approved и rendered сценариев клиент SHOULD вызвать `POST /api/scenarios/:id/revise`, а для published — `POST /api/scenarios/:id/remix`. Revision атомарно переводит scenario в `draft`, ставит его в `revision_queued` и возвращает `202` с revision job ID. Remix создаёт новый draft с `remix_of: <source_id>`, не изменяя `published` record.
 
-#### Scenario: Feedback note is recorded
-- **WHEN** клиент отправляет валидный feedback для непубликованного scenario
-- **THEN** server сохраняет timestamped feedback record и отвечает состоянием `feedback_recorded`, не заявляя об изменении panels или prompts
+#### Scenario: Legacy feedback endpoint receives data
+- **WHEN** клиент отправляет feedback на `POST /api/scenarios/:id/feedback` для не-published scenario
+- **THEN** server возвращает `409` с error code `REVISION_REQUIRED`, structured details и `remix_endpoint` если scenario is published, не записывая feedback в `scenario.feedback`
+
+#### Scenario: Author uses revision endpoint
+- **WHEN** клиент вызывает `POST /api/scenarios/:id/revise` для approved scenario
+- **THEN** server атомарно переводит scenario в `draft` и возвращает `202` с revision job ID, как определено в `scenario-revision-and-remix` capability
+
+#### Scenario: Remix endpoint returns new draft ID
+- **WHEN** клиент вызывает `POST /api/scenarios/:id/remix` для published scenario
+- **THEN** server возвращает `201` с `id` нового draft, `remix_of: <source_id>` и `status: draft`
+
+#### Scenario: Scenario serializer reports remix source
+- **WHEN** API возвращает scenario с полем `remix_of`
+- **THEN** response содержит `remix_of: <source_id>` и исключает `published_at` или `comic_path` если scenario is draft
 
 #### Scenario: Feedback is sent to published scenario
 - **WHEN** клиент отправляет feedback для status `published`
-- **THEN** server возвращает `409` с error code `PUBLISHED_IMMUTABLE`; будущий remix выполняется отдельным workflow
+- **THEN** server возвращает `409` с error code `PUBLISHED_IMMUTABLE` и предлагает вызвать `remix_endpoint`
 
 ### Requirement: Guarded deletion
 Delete API SHALL требовать явное подтверждение, MUST NOT удалять published или archived content и SHALL сообщать success только после обработки canonical scenario и всех связанных mutable comic artifacts.

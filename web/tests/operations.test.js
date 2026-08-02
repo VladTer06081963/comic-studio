@@ -39,26 +39,26 @@ test('seed endpoint validates integer and prevents rendered drift', async () => 
   } finally { await server.close(); ctx.project.cleanup(); }
 });
 
-test('feedback records pending revision without claiming regeneration and blocks published', async () => {
+test('feedback rejects non-published scenarios with REVISION_REQUIRED and published with PUBLISHED_IMMUTABLE', async () => {
   const ctx = makeTestRuntime();
-  const original = writeScenario(ctx.runtime.config.dataRoot, 'approved', { id: 'ops-0003' });
+  writeScenario(ctx.runtime.config.dataRoot, 'approved', { id: 'ops-0003' });
   writeScenario(ctx.runtime.config.dataRoot, 'published', { id: 'ops-0004' });
   const server = await listen(ctx.app);
   try {
     const recorded = await jsonFetch(`${server.baseUrl}/api/scenarios/ops-0003/feedback`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Сделать финал смешнее' }),
     });
-    assert.equal(recorded.response.status, 200);
-    assert.equal(recorded.body.status, 'feedback_recorded');
-    const updated = ctx.runtime.store.get('ops-0003').record;
-    assert.deepEqual(updated.panels, original.panels);
-    assert.equal(updated.feedback[0].status, 'pending_revision');
+    assert.equal(recorded.response.status, 409);
+    assert.equal(recorded.body.error.code, 'REVISION_REQUIRED');
+    assert.equal(recorded.body.error.details.revise_endpoint, '/api/scenarios/ops-0003/revise');
+    assert.equal(ctx.runtime.store.get('ops-0003').record.status, 'approved');
 
     const published = await jsonFetch(`${server.baseUrl}/api/scenarios/ops-0004/feedback`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'change' }),
     });
     assert.equal(published.response.status, 409);
     assert.equal(published.body.error.code, 'PUBLISHED_IMMUTABLE');
+    assert.equal(published.body.error.details.remix_endpoint, '/api/scenarios/ops-0004/remix');
   } finally { await server.close(); ctx.project.cleanup(); }
 });
 

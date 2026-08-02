@@ -100,11 +100,11 @@
           <li><b>Комиксы</b> — 🖼️ все выпуски</li>
         </ul>
 
-        <h3>💬 Запрос на правку</h3>
+        <h3>🔄 Revision</h3>
         <ol>
-          <li>На карточке сценария нажми <b>💬 Запросить правку</b></li>
+          <li>На карточке сценария нажми <b>🔄 Revision</b></li>
           <li>Введи пожелания или выбери пример</li>
-          <li>Нажми <b>Сохранить запрос</b></li>
+          <li>Нажми <b>Revision</b></li>
         </ol>
         <p><b>Примеры правок:</b></p>
         <ul>
@@ -114,7 +114,7 @@
           <li><i>Изменить концовку</i></li>
           <li><i>Добавить персонажа</i></li>
         </ul>
-        <p>Badge <b>💬 N запросов</b> показывает сохранённую историю. На этом этапе запрос фиксируется, но ещё не запускает LLM-регенерацию.</p>
+        <p>Badge <b>💬 N запросов</b> показывает сохранённую историю. Revision запускает LLM-регенерацию и снимает approval до ручного re-approval.</p>
 
         <h3>🔐 Доступ</h3>
         <ul>
@@ -127,7 +127,8 @@
         <ul>
           <li><b>✅ Утвердить</b> — перевести в статус «Утверждён»</li>
           <li><b>❌ Отклонить</b> — перевести в статус «Отклонён»</li>
-          <li><b>💬 Запросить правку</b> — сохранить revision request для следующего этапа</li>
+          <li><b>🔄 Revision</b> — для approved/rendered, атомарно отзывает approval и запускает LLM</li>
+          <li><b>🎨 Remix</b> — только для published, создаёт новый draft</li>
           <li><b>🔄 Re-render</b> — атомарно заменить только rendered comic</li>
           <li><b>Published</b> — read-only; изменение потребует нового remix draft</li>
         </ul>
@@ -158,7 +159,7 @@
   <!-- Edit Modal -->
   <div id="edit-modal" class="modal hidden">
     <div class="modal-content">
-      <h3>💬 Запрос на правку</h3>
+      <h3>🔄 Revision / 🎨 Remix</h3>
       <p>ID: <code id="edit-id"></code></p>
       <textarea id="edit-text" placeholder="Опишите желаемые изменения..."></textarea>
       <div class="examples">
@@ -173,7 +174,7 @@
       </div>
       <div class="modal-actions">
         <button id="edit-cancel">Отмена</button>
-        <button id="edit-save">Сохранить запрос</button>
+        <button id="edit-save">🔄 Revision</button>
       </div>
     </div>
   </div>

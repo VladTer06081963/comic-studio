@@ -5,7 +5,12 @@ export const LIFECYCLE_CASES = Object.freeze([
   { from: 'approved', operation: 'reject', allowed: false, code: 'INVALID_TRANSITION' },
   { from: 'rejected', operation: 'approve', allowed: false, code: 'INVALID_TRANSITION' },
   { from: 'published', operation: 'render', allowed: false, code: 'PUBLISHED_IMMUTABLE' },
+  { from: 'published', operation: 'remix', allowed: true, creates: 'draft' },
   { from: 'draft', operation: 'render', allowed: false, code: 'APPROVAL_REQUIRED' },
+  { from: 'rejected', operation: 'render', allowed: false, code: 'APPROVAL_REQUIRED' },
+  { from: 'draft', operation: 'revise', allowed: false, code: 'APPROVAL_REQUIRED' },
   { from: 'rendered', operation: 'render', mode: 'initial', allowed: false, code: 'RERENDER_CONFIRMATION_REQUIRED' },
   { from: 'rendered', operation: 'render', mode: 'rerender', allowed: true },
+  { from: 'approved', operation: 'revise', allowed: true, revoke_approval: true },
+  { from: 'rendered', operation: 'revise', allowed: true, revoke_approval: true, legacy_staging: true },
 ]);

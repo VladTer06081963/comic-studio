@@ -8,13 +8,39 @@ import { JobStore } from './job_store.js';
 import { JobManager } from './job_manager.js';
 import { safeResolve } from './validation.js';
 
+function defaultOnRevisionComplete({ config, store, logger }) {
+  return async ({ job, parsed, success, error, interrupted = false }) => {
+    try {
+      if (interrupted) {
+        logger.info('revision.interrupted', { scenario_id: job.scenario_id, job_id: job.id, request_id: job.request_id });
+        return;
+      }
+      if (success && parsed && parsed.id) {
+        const record = JSON.parse(fs.readFileSync(path.resolve(config.dataRoot, 'scenarios', 'draft', `${parsed.id}.json`), 'utf-8'));
+        await store.applyRevision(parsed.id, record, { requestId: job.request_id, feedbackCount: parsed.feedback_count });
+        logger.info('revision.succeeded', { scenario_id: parsed.id, job_id: job.id, request_id: job.request_id, revision_request_id: parsed.revision_at });
+      } else if (error) {
+        await store.markRevisionFailed(job.scenario_id, {
+          requestId: job.request_id,
+          errorCode: error.code || 'REVISION_FAILED',
+          message: error.message || 'Revision failed',
+        });
+        logger.warn('revision.failed', { scenario_id: job.scenario_id, job_id: job.id, request_id: job.request_id, code: error.code || 'REVISION_FAILED' });
+      }
+    } catch (inner) {
+      logger.error('revision.apply.failed', { scenario_id: job.scenario_id, job_id: job.id, code: inner.code || 'REVISION_APPLY_FAILED', message: inner.message });
+    }
+  };
+}
+
 export function createRuntime(config, overrides = {}) {
   const logger = overrides.logger || createLogger({ dataRoot: config.dataRoot, projectRoot: config.projectRoot });
-  const store = overrides.store || new ScenarioStore({ dataRoot: config.dataRoot, logger });
-  const lifecycle = overrides.lifecycle || new LifecycleService({ store, minSeed: config.minSeed, maxSeed: config.maxSeed });
+  const store = overrides.store || new ScenarioStore({ dataRoot: config.dataRoot, logger, maxRevisionHistory: config.maxRevisionHistory });
+  const lifecycle = overrides.lifecycle || new LifecycleService({ store, logger, minSeed: config.minSeed, maxSeed: config.maxSeed, maxFeedbackCount: config.maxRevisionFeedbackCount });
   const runner = overrides.runner || new ProcessRunner({ logger });
   const jobStore = overrides.jobStore || new JobStore({ dataRoot: config.dataRoot, logger });
-  const jobManager = overrides.jobManager || new JobManager({ config, jobStore, runner, logger });
+  const onRevisionComplete = overrides.onRevisionComplete || defaultOnRevisionComplete({ config, store, logger });
+  const jobManager = overrides.jobManager || new JobManager({ config, jobStore, runner, logger, onRevisionComplete });
   let stopping = false;
 
   function cleanupArtifacts() {
@@ -30,6 +56,7 @@ export function createRuntime(config, overrides = {}) {
         } catch {}
       }
     }
+    store.cleanupLegacyStaging(config.legacyRetentionMs);
     return jobStore.cleanup(config.jobRetentionMs);
   }
 

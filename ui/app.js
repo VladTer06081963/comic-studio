@@ -102,18 +102,18 @@ document.getElementById('edit-save')?.addEventListener('click', async () => {
 
   const btn = document.getElementById('edit-save');
   btn.disabled = true;
-  btn.textContent = '⏳ Сохранение запроса...';
+  btn.textContent = '⏳ Revision...';
 
   try {
-    const res = await apiFetch(`/api/scenarios/${currentEditId}/feedback`, {
+    const res = await apiFetch(`/api/scenarios/${currentEditId}/revise`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ feedback: [{ text, source: 'web-ui' }] }),
     });
     const data = await res.json();
     if (data.ok) {
       closeEditModal();
-      alert('Запрос на правку сохранён. LLM-регенерация будет добавлена отдельным этапом.');
+      alert('Revision инициирован. После перегенерации потребуется повторное approval.');
       // Reload current tab
       const activeTab = document.querySelector('nav button.active').dataset.tab;
       loadTab(activeTab);
@@ -124,7 +124,7 @@ document.getElementById('edit-save')?.addEventListener('click', async () => {
     alert(`Ошибка: ${err.message}`);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Сохранить запрос';
+    btn.textContent = '🔄 Revision';
   }
 });
 
@@ -195,29 +195,39 @@ function scenarioCard(sc, status) {
   const feedbackBadge = getFeedbackBadge(sc.feedback_count ?? (sc.feedback || []).length);
   const seedBadge = sc.seed !== undefined ? `<span class="tag">🎲 ${sc.seed}</span>` : '';
   const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge} ${feedbackBadge} ${seedBadge}`;
-  const renderBtn = `<button class="render" data-id="${sc.id}" data-action="render">${status === 'rendered' ? '🔄 Re-render' : '🎨 Рендер'}</button>`;
+  const renderBtn = status === 'rendered'
+    ? `<button class="render" data-id="${sc.id}" data-action="render">🔄 Re-render</button>`
+    : `<button class="render" data-id="${sc.id}" data-action="render">🎨 Рендер</button>`;
   const seedBtn = status === 'rendered'
     ? `<button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed + re-render</button>`
     : `<button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed</button>`;
+  const editBtn = (status === 'approved' || status === 'rendered')
+    ? `<button class="edit" data-id="${sc.id}" data-action="edit">🔄 Revision</button>`
+    : status === 'published'
+      ? `<button class="edit" data-id="${sc.id}" data-action="edit">🎨 Remix</button>`
+      : '';
   let actions;
   if (status === 'draft') {
     actions = `
     <div class="actions">
       <button class="approve" data-id="${sc.id}" data-action="approve">✅ Утвердить</button>
       <button class="reject" data-id="${sc.id}" data-action="reject">❌ Отклонить</button>
-      <button class="edit" data-id="${sc.id}" data-action="edit">💬 Запросить правку</button>
       <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
     </div>`;
   } else if (status === 'approved' || status === 'rendered') {
     actions = `
     <div class="actions">
-      <button class="edit" data-id="${sc.id}" data-action="edit">💬 Запросить правку</button>
+      ${editBtn}
       ${renderBtn}
       ${seedBtn}
       <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
     </div>`;
   } else {
-    actions = `<div class="actions"><span class="tag">🔒 Только чтение</span></div>`;
+    actions = `
+    <div class="actions">
+      ${editBtn}
+      <span class="tag">🔒 Только чтение</span>
+    </div>`;
   }
   return `
     <div class="card">

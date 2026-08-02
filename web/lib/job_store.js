@@ -23,7 +23,12 @@ export class JobStore {
     return safeResolve(this.root, `${id}.json`);
   }
 
-  create({ type, scenarioId, mode, requestId, seed }) {
+  create({ type, scenarioId, mode, requestId, seed, revisionKind, sourceContextPreview, feedbackCount }) {
+    if (!['render', 'revision'].includes(type)) {
+      const err = new Error(`Invalid job type: ${type}`);
+      err.code = 'INVALID_JOB_TYPE';
+      throw err;
+    }
     const job = {
       id: this.idGenerator(),
       type,
@@ -33,6 +38,9 @@ export class JobStore {
       created_at: this.clock().toISOString(),
       request_id: requestId,
       ...(seed !== undefined ? { seed } : {}),
+      ...(revisionKind !== undefined ? { revision_kind: revisionKind } : {}),
+      ...(sourceContextPreview !== undefined ? { source_context_preview: sourceContextPreview } : {}),
+      ...(feedbackCount !== undefined ? { feedback_count: feedbackCount } : {}),
     };
     atomicWriteJson(this.pathFor(job.id), job, { overwrite: false });
     return job;
@@ -99,6 +107,9 @@ export function serializeJob(job) {
     type: job.type,
     scenario_id: job.scenario_id,
     mode: job.mode,
+    revision_kind: job.revision_kind,
+    source_context_preview: job.source_context_preview,
+    feedback_count: job.feedback_count,
     status: job.status,
     created_at: job.created_at,
     started_at: job.started_at,

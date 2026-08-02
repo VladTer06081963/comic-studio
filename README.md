@@ -93,9 +93,20 @@ bash cron/nightly.sh --dry-run
 
 Команда без `--dry-run` выполняет реальные side effects.
 
-## Transitional feedback
+## Revision и remix
 
-Кнопка **«Запросить правку»** пока сохраняет revision request в `scenario.feedback[]`, но не запускает LLM-регенерацию. Настоящее редактирование и remix опубликованного контента запланированы в [`docs/roadmap.md`](docs/roadmap.md).
+- Кнопка **🔄 Revision** на карточке `approved`/`rendered` сценария вызывает
+  `POST /api/scenarios/:id/revise`. Server атомарно отзывает approval,
+  при необходимости перемещает rendered artifacts в
+  `data/.staging/legacy/<id>-<ts>/` и запускает LLM-регенерацию. После
+  успешной регенерации scenario остаётся в `draft` со статусом
+  `revision_succeeded` и требует повторного approval.
+- Кнопка **🎨 Remix** на карточке `published` сценария вызывает
+  `POST /api/scenarios/:id/remix` и создаёт новый draft с
+  `remix_of: <source_id>`. Source `published` record остаётся неизменным.
+- Legacy `POST /api/scenarios/:id/feedback` возвращает `409 REVISION_REQUIRED`
+  для не-published и `409 PUBLISHED_IMMUTABLE` для published; feedback не
+  сохраняется. Используйте `/revise` или `/remix` для реальной правки.
 
 ## Публикация
 

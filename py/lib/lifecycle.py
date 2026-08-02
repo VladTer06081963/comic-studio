@@ -184,6 +184,102 @@ def mark_published(scenario_id: str, published_url: Optional[str] = None) -> Opt
     )
 
 
+def revoke_approval(
+    scenario_id: str,
+    request_id: Optional[str] = None,
+    reason: str = "revision",
+) -> Optional[dict]:
+    """Atomically move approved|rendered scenarios back to draft for revision.
+
+    Returns the updated scenario dict or None if the source status is invalid.
+    """
+    current = load_scenario(scenario_id)
+    if not current:
+        return None
+    source_status = current.get("status")
+    if source_status not in {"approved", "rendered"}:
+        logger.error(
+            f"{scenario_id}: revoke_approval requires approved|rendered, got {source_status}"
+        )
+        return None
+    src_path = None
+    for state in STATES:
+        candidate = scenarios_dir(state) / f"{scenario_id}.json"
+        if candidate.exists():
+            src_path = candidate
+            if state != source_status:
+                logger.error(
+                    f"{scenario_id}: source directory {state} does not match status {source_status}"
+                )
+                return None
+            break
+    if src_path is None:
+        logger.error(f"{scenario_id}: source file not found in any queue")
+        return None
+    dst_path = scenarios_dir("draft") / f"{scenario_id}.json"
+    if dst_path.exists():
+        logger.error(f"{scenario_id}: draft destination already exists")
+        return None
+
+    scenario = json.loads(src_path.read_text(encoding="utf-8"))
+    scenario["status"] = "draft"
+    scenario["draft_at"] = _dt.now().isoformat()
+    scenario["revision_status"] = "revision_queued"
+    scenario["revision_request_id"] = request_id or scenario.get("id")
+    scenario["revision_at"] = _dt.now().isoformat()
+    scenario["revision_source"] = source_status
+    for field in ("approved_at", "rendered_at", "render_revision", "panel_paths", "comic_path", "published_at", "published_url", "rejected_at"):
+        scenario.pop(field, None)
+
+    _atomic_write(dst_path, scenario)
+    src_path.unlink(missing_ok=True)
+    logger.info(f"Revoked approval for {scenario_id} ({reason})")
+    return scenario
+
+
+def create_remix(source_id: str, id_factory=None) -> Optional[dict]:
+    """Create a new draft scenario that copies a published record without mutating it.
+
+    Returns the new draft dict or None if the source is not published.
+    """
+    import uuid
+    source = load_scenario(source_id)
+    if not source:
+        return None
+    if source.get("status") != "published":
+        logger.error(f"{source_id}: remix requires published status, got {source.get('status')}")
+        return None
+    if id_factory is None:
+        new_id = uuid.uuid4().hex[:8]
+    else:
+        new_id = id_factory()
+        if not isinstance(new_id, str) or not new_id:
+            raise ValueError("id_factory must return a non-empty string id")
+    new_id = new_id
+    now = _dt.now().isoformat()
+    draft = dict(source)
+    draft.update({
+        "id": new_id,
+        "status": "draft",
+        "created_at": now,
+        "approved_at": None,
+        "rejected_at": None,
+        "rendered_at": None,
+        "published_at": None,
+        "published_url": None,
+        "render_revision": None,
+        "feedback": [],
+        "revision_history": [],
+        "revision_status": "none",
+        "revision_of": source.get("id"),
+        "remix_of": source.get("id"),
+        "remix_created_at": now,
+    })
+    _atomic_write(scenarios_dir("draft") / f"{new_id}.json", draft)
+    logger.info(f"Remix created {new_id} from {source_id}")
+    return draft
+
+
 def validate_approved(scenario_id: str) -> Optional[dict]:
     """Load a scenario and verify it is in approved status.
 

@@ -154,7 +154,7 @@ POST /api/scenarios/abc12345/render
 
 Ошибки возвращают non-zero process exit и failed job. Scenario не должен становиться rendered после partial failure.
 
-## 6. Render jobs
+## 6. Render и revision jobs
 
 ```text
 queued → running → succeeded
@@ -169,7 +169,12 @@ GET /api/jobs
 GET /api/jobs/<job-id>
 ```
 
-Для одного scenario допускается один active render job. После server restart незавершённые jobs становятся `interrupted`; автоматический paid retry не выполняется.
+Для одного scenario одновременно активен не более одного job любого типа
+(`render` или `revision`). `activeForScenario` возвращает активный job
+любого типа, и endpoint `/api/scenarios/:id/render` или
+`/api/scenarios/:id/revise` отвечает `409 BUSY` с `job_id` и `type`.
+После server restart активные jobs становятся `interrupted`; paid retry не
+выполняется.
 
 ## 7. Explicit rerender
 
@@ -192,16 +197,55 @@ POST /api/scenarios/<id>/render
 
 `published` нельзя rerender.
 
-## 8. Feedback / revision request
+## 8. Revision и remix
 
-Текущий endpoint сохраняет feedback history:
+### Revision flow
 
-```http
-POST /api/scenarios/<id>/feedback
-{"text":"Изменить финал"}
+```text
+approved|rendered ──POST /revise──▶ draft (revision_queued)
+                                  ├─LLM ok──▶ draft (revision_succeeded) ──approve──▶ approved
+                                  └─LLM fail─▶ draft (revision_failed)
 ```
 
-Response говорит `feedback_recorded`, а не «scenario edited». LLM regeneration пока не выполняется. Она является обязательным follow-up `scenario-revision-and-remix`.
+1. Server валидирует scenario state, bounded feedback history (≤
+   `WEB_MAX_REVISION_FEEDBACK_COUNT`, default 20) и atomic revoke.
+2. Для `rendered` rendered artifacts перемещаются в
+   `data/.staging/legacy/<id>-<ts>/` с manifest, и только затем отзывается
+   approval.
+3. Server enqueues `revision` job и возвращает `202` с `job.id` и
+   `revision_endpoint`. Process runner вызывает
+   `scripts/revise_scenario.py` без shell, с bounded
+   `--feedback`/`--source-context` аргументами и
+   `WEB_REVISION_TIMEOUT_MS`/`WEB_REVISION_OUTPUT_LIMIT` лимитами.
+4. Успешный LLM-вызов атомарно сохраняет revised draft со свежим
+   `revision_at`, `revision_status: revision_succeeded` и bounded
+   `revision_history` (последние 10). Pre-revision status
+   `revision_queued` сохраняется в `revision_history` для аудита.
+5. Failure оставляет сценарий в `draft` со статусом `revision_failed`,
+   bounded `revision_error` и сохранённым feedback. Render и publication
+   остаются заблокированы до повторного approval.
+
+### Remix flow
+
+```text
+published ──POST /remix──▶ new draft (remix_of: <source_id>)
+```
+
+`createRemix` копирует title, panels, captions, style, image_style, layout,
+aspect_ratio, seed, tone из source, добавляет `remix_of` и
+`remix_created_at`, очищает feedback, и записывает новый draft в
+`data/scenarios/draft/<new-id>.json`. Source record остаётся без изменений;
+его `revision_history` не дополняется.
+
+### Legacy feedback endpoint
+
+`POST /api/scenarios/:id/feedback` остаётся для backward-compatible UI, но
+возвращает `409 REVISION_REQUIRED` для не-published и
+`409 PUBLISHED_IMMUTABLE` для published с подсказкой использовать
+`/revise` или `/remix`. Никакой feedback не записывается в
+`scenario.feedback`.
+
+## 9. Delete
 
 ## 9. Delete
 
@@ -224,7 +268,9 @@ node scripts/publish_rendered.js
 - Notion scenario mirror частичный;
 - Notion comic mirror placeholder.
 
-После реальной публикации record считается immutable. Изменение published comic должно создавать новый remix draft с новым ID — этот workflow ещё не реализован.
+После реальной публикации record считается immutable. Изменение published comic создаёт новый draft через
+`POST /api/scenarios/:id/remix`, который копирует panels и style metadata
+без мутации source record.
 
 ## 11. Data layout
 

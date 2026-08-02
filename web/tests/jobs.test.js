@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AppError } from '../lib/errors.js';
 import { FakeRunner, makeTestRuntime, writeScenario, listen, jsonFetch } from './helpers.js';
+import fs from 'fs';
+import path from 'path';
 
 class DeferredRunner extends FakeRunner {
   constructor() {
@@ -58,7 +60,7 @@ test('approved render creates observable job and deduplicates active requests', 
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'initial' }),
     });
     assert.equal(second.response.status, 409);
-    assert.equal(second.body.error.code, 'RENDER_ALREADY_RUNNING');
+    assert.equal(second.body.error.code, 'BUSY');
     assert.equal(second.body.error.details.job_id, first.body.job.id);
 
     runner.pending[0].resolve({ code: 0, stdout: JSON.stringify({ ok: true, comic_path: '/safe/comic.png', render_revision: 1 }), stderr: '' });
@@ -107,5 +109,69 @@ test('failed process produces failed job and restart marks active jobs interrupt
     ctx.runtime.jobStore.update(stale.id, { status: 'running' });
     assert.equal(ctx.runtime.jobStore.markInterrupted(), 1);
     assert.equal(ctx.runtime.jobStore.get(stale.id).status, 'interrupted');
+  } finally { await server.close(); ctx.project.cleanup(); }
+});
+
+test('remix endpoint creates new draft from published scenario', async () => {
+  const ctx = makeTestRuntime();
+  writeScenario(ctx.runtime.config.dataRoot, 'published', { id: 'remix-0001' });
+  const server = await listen(ctx.app);
+  try {
+    const result = await jsonFetch(`${server.baseUrl}/api/scenarios/remix-0001/remix`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    assert.equal(result.response.status, 201);
+    assert.match(result.body.id, /^[a-zA-Z0-9_-]{4,64}$/);
+    assert.equal(result.body.status, 'draft');
+    assert.equal(result.body.remix_of, 'remix-0001');
+    assert.equal(ctx.runtime.store.find(result.body.id).state, 'draft');
+    assert.equal(ctx.runtime.store.find('remix-0001').state, 'published');
+  } finally { await server.close(); ctx.project.cleanup(); }
+});
+
+test('remix endpoint rejects non-published scenarios with REMIX_REQUIRES_PUBLISHED', async () => {
+  const ctx = makeTestRuntime();
+  writeScenario(ctx.runtime.config.dataRoot, 'approved', { id: 'remix-0002' });
+  const server = await listen(ctx.app);
+  try {
+    const result = await jsonFetch(`${server.baseUrl}/api/scenarios/remix-0002/remix`, { method: 'POST' });
+    assert.equal(result.response.status, 409);
+    assert.equal(result.body.error.code, 'REMIX_REQUIRES_PUBLISHED');
+  } finally { await server.close(); ctx.project.cleanup(); }
+});
+
+test('revise endpoint accepts approved scenario and returns queued job with revoke', async () => {
+  const runner = new DeferredRunner();
+  const ctx = makeTestRuntime({ runner });
+  fs.writeFileSync(path.join(ctx.project.dataRoot, 'scenarios', 'approved', 'rev-0001.json'), JSON.stringify({ id: 'rev-0001', status: 'approved', title: 'r', tone: 'epic', style: 'star', image_style: 'comic', layout: 'comic', aspect_ratio: '16:9', panels: [{ n: 1, prompt: 'p', caption: 'c' }] }));
+  const server = await listen(ctx.app);
+  try {
+    const result = await jsonFetch(`${server.baseUrl}/api/scenarios/rev-0001/revise`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedback: [{ text: 'Сделать мягче' }] }),
+    });
+    assert.equal(result.response.status, 202);
+    assert.equal(result.body.status, 'draft');
+    assert.equal(result.body.job.type, 'revision');
+    assert.equal(result.body.job.status, 'queued');
+    const revoked = ctx.runtime.store.find('rev-0001');
+    assert.equal(revoked.state, 'draft');
+    assert.equal(revoked.record.revision_status, 'revision_queued');
+    runner.pending[0].resolve({ code: 0, stdout: JSON.stringify({ ok: true, id: 'rev-0001', revision_at: '2026-08-02T00:00:00Z', feedback_count: 1 }), stderr: '' });
+    const job = await pollJob(server.baseUrl, result.body.job.id);
+    assert.equal(job.status, 'succeeded');
+  } finally { await server.close(); ctx.project.cleanup(); }
+});
+
+test('revise endpoint rejects draft and published with structured errors', async () => {
+  const ctx = makeTestRuntime();
+  fs.writeFileSync(path.join(ctx.project.dataRoot, 'scenarios', 'draft', 'rev-0002.json'), JSON.stringify({ id: 'rev-0002', status: 'draft', title: 'r', tone: 'epic', style: 'star', image_style: 'comic', layout: 'comic', aspect_ratio: '16:9', panels: [{ n: 1, prompt: 'p', caption: 'c' }] }));
+  fs.writeFileSync(path.join(ctx.project.dataRoot, 'scenarios', 'published', 'rev-0003.json'), JSON.stringify({ id: 'rev-0003', status: 'published', title: 'r', tone: 'epic', style: 'star', image_style: 'comic', layout: 'comic', aspect_ratio: '16:9', panels: [{ n: 1, prompt: 'p', caption: 'c' }] }));
+  const server = await listen(ctx.app);
+  try {
+    const draft = await jsonFetch(`${server.baseUrl}/api/scenarios/rev-0002/revise`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feedback: [{ text: 'note' }] }) });
+    assert.equal(draft.response.status, 409);
+    assert.equal(draft.body.error.code, 'APPROVAL_REQUIRED');
+    const published = await jsonFetch(`${server.baseUrl}/api/scenarios/rev-0003/revise`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feedback: [{ text: 'note' }] }) });
+    assert.equal(published.response.status, 409);
+    assert.equal(published.body.error.code, 'PUBLISHED_IMMUTABLE');
   } finally { await server.close(); ctx.project.cleanup(); }
 });

@@ -25,7 +25,7 @@
 - **THEN** server сохраняет structured failure outcome и не интерпретирует наличие stdout как success
 
 ### Requirement: Observable render jobs
-Успешно принятый render request SHALL возвращать `202` с stable job ID, scenario ID и job status; клиент SHALL иметь API для получения `queued`, `running`, `succeeded` или `failed` outcome.
+Успешно принятый render request SHALL возвращать `202` с stable job ID, scenario ID и job status; клиент SHALL иметь API для получения `queued`, `running`, `succeeded` или `failed` outcome. Job record SHALL включать `type` (`render` или `revision`), `mode` (для render), `revision_kind`, `source_context_preview`, `feedback_count`, timestamps и originating `request_id`.
 
 #### Scenario: Render job is accepted
 - **WHEN** валидный approved render request успешно поставлен на выполнение
@@ -33,14 +33,26 @@
 
 #### Scenario: Client polls a completed job
 - **WHEN** клиент запрашивает существующий завершённый job
-- **THEN** server возвращает terminal status, timestamps и безопасное result или error summary
+- **THEN** server возвращает terminal status, timestamps, `type`, type-specific metadata, originating `request_id` и безопасное result или error summary
+
+#### Scenario: Job detail includes revision metadata
+- **WHEN** клиент запрашивает `GET /api/jobs/:id` для revision job
+- **THEN** response содержит `type: "revision"`, `revision_kind`, `source_context_preview`, `feedback_count` и `request_id`
 
 ### Requirement: Per-scenario job deduplication
-Система MUST предотвращать одновременные render jobs для одного scenario ID и SHALL возвращать ссылку на active job либо conflict response вместо запуска второго process.
+Система MUST предотвращать одновременные render и revision jobs для одного scenario ID, возвращая `409` с error code `BUSY` и active job ID вместо запуска второго process.
 
 #### Scenario: Duplicate render request arrives
-- **WHEN** для scenario уже существует `queued` или `running` render job
-- **THEN** server не запускает второй process и возвращает `409` с error code `RENDER_ALREADY_RUNNING` и active job ID
+- **WHEN** для scenario уже существует `queued` или `running` job любого типа
+- **THEN** server не запускает второй process и возвращает `409` с error code `BUSY` и active job ID
+
+#### Scenario: Render blocks revision
+- **WHEN** для scenario уже есть queued или running job любого типа
+- **THEN** server отклоняет новый request с `409` и error code `BUSY`, включая active job ID
+
+#### Scenario: Revision blocks render
+- **WHEN** revision job активен
+- **THEN** server отклоняет render request и не обращается к image provider
 
 ### Requirement: Safe rerender replacement
 Explicit rerender SHALL создавать candidate artifacts отдельно от текущего rendered comic и SHALL заменять текущий результат только после успешной проверки всех panels и final PNG.
