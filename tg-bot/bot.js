@@ -740,7 +740,13 @@ bot.action(/^remix:(.+)$/, async (ctx) => {
     });
     const data = await response.json();
     if (response.ok) {
-      await ctx.editMessageText(`🎨 <b>Remix создан.</b>\n\nID: <code>${escapeHtml(data.id)}</code>\nSource: <code>${escapeHtml(id)}</code>`, { parse_mode: 'HTML' });
+      const msg = `🎨 <b>Remix создан.</b>\n\nID: <code>${escapeHtml(data.id)}</code>\nSource: <code>${escapeHtml(id)}</code>`;
+      const kb = { inline_keyboard: [[Markup.button.callback('👀 Посмотреть remix', `view:${data.id}`)]] };
+      try {
+        await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb });
+      } catch (e) {
+        await ctx.reply(msg, { parse_mode: 'HTML', reply_markup: kb });
+      }
     } else {
       await ctx.answerCbQuery(`❌ ${data?.error?.code || 'remix failed'}`);
     }
