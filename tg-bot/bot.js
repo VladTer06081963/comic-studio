@@ -864,7 +864,7 @@ bot.action(/^publish:(.+)$/, async (ctx) => {
   ctx.answerCbQuery('🚀 Публикую...');
   const progressMsg = await ctx.reply(`🚀 <b>Публикация комикса <code>${id}</code>...</b>`, { parse_mode: 'HTML' });
 
-  const cmd = `node scripts/publish_rendered.js`;
+  const cmd = `node --env-file=.env scripts/publish_rendered.js`;
   try {
     const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
     try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
