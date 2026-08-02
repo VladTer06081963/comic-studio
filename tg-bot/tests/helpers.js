@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+global.isTestEnv = true;
 import { Context } from 'telegraf';
 import { CHAT_ID } from '../bot.js';
 

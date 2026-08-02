@@ -1001,7 +1001,36 @@ bot.on('text', async (ctx) => {
       });
       const data = await response.json();
       if (response.ok) {
-        return ctx.reply(`🔄 <b>Revision запущен.</b> Job: <code>${escapeHtml(data.job?.id || 'n/a')}</code>`, { parse_mode: 'HTML' });
+        const jobId = data.job?.id;
+        const progressMsg = await ctx.reply(`🔄 <b>Запущена ИИ-редакция сценария.</b>\nОжидаем завершения (обычно 15-30 сек) ⏳`, { parse_mode: 'HTML' });
+        
+        const pollJob = async () => {
+          if (global.isTestEnv) return;
+          for (let i = 0; i < 20; i++) {
+            await new Promise(r => setTimeout(r, 3000));
+            try {
+              const jRes = await fetch(`${process.env.WEB_API_URL || 'http://127.0.0.1:3000'}/api/jobs/${jobId}`);
+              if (jRes.ok) {
+                const jData = await jRes.json();
+                const status = jData.job?.status;
+                if (status === 'succeeded') {
+                  try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+                  await ctx.reply(`✅ <b>Редакция сценария завершена!</b>`, { parse_mode: 'HTML' });
+                  const updated = findScenario(id);
+                  if (updated) return sendScenarioView(ctx, updated.scenario, updated.status);
+                  return;
+                } else if (status === 'failed' || status === 'interrupted') {
+                  try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+                  await ctx.reply(`❌ <b>Ошибка редакции:</b> ${escapeHtml(jData.job?.error?.message || 'unknown')}`, { parse_mode: 'HTML' });
+                  return;
+                }
+              }
+            } catch (e) {}
+          }
+          await ctx.reply(`⚠️ Время ожидания вышло. Проверьте результат позже через /view ${id}`);
+        };
+        pollJob();
+        return;
       }
       return ctx.reply(`❌ <b>Revision не выполнен:</b> <code>${escapeHtml(data?.error?.code || 'unknown')}</code>`, { parse_mode: 'HTML' });
     } catch (error) {
