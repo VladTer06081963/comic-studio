@@ -1038,12 +1038,17 @@ bot.on('text', async (ctx) => {
   );
 });
 
-// Launch Bot
-bot.launch().then(() => {
-  console.log(`🤖 Telegram bot запущен в обновлённом режиме. Chat ID: ${CHAT_ID}`);
-}).catch(err => {
-  console.error('Failed to launch bot:', err);
-});
+// Export bot and userState for testing
+export { bot, userState, CHAT_ID };
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// Launch Bot
+if (import.meta.url === `file://${process.argv[1]}`) {
+  bot.launch().then(() => {
+    console.log(`🤖 Telegram bot запущен в обновлённом режиме. Chat ID: ${CHAT_ID}`);
+  }).catch(err => {
+    console.error('Failed to launch bot:', err);
+  });
+
+  process.once('SIGINT', () => bot.stop('SIGINT'));
+  process.once('SIGTERM', () => bot.stop('SIGTERM'));
+}
