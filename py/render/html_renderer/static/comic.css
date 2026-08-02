@@ -40,9 +40,10 @@ main.comic {
 
 /* ── Layout variants ────────────────────────────────────────────────────────── */
 main.comic--comic {
-  /* Asymmetric grid: 1 large panel + smaller tiles below. Panels keep intrinsic order via grid-template-areas */
-  grid-template-columns: repeat(12, 1fr);
-  grid-auto-rows: minmax(0, auto);
+  /* Desktop: 2-column grid. Panel 1 spans full width (16:7 wide intro),
+     panels 2-N split into 2 columns below (4:3 each). Compact strip. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: auto;
 }
 
 main.comic--grid {
@@ -66,10 +67,16 @@ main.comic--vertical {
   animation: panel-in 320ms ease-out both;
 }
 
-main.comic--comic > .panel:nth-child(1) { grid-column: span 12; aspect-ratio: 16 / 9; }
-main.comic--comic > .panel:nth-child(2) { grid-column: span 7;  aspect-ratio: 4 / 3; }
-main.comic--comic > .panel:nth-child(3) { grid-column: span 5;  aspect-ratio: 4 / 3; }
-main.comic--comic > .panel:nth-child(4) { grid-column: span 12; aspect-ratio: 16 / 7; }
+main.comic--comic > .panel:nth-child(1) {
+  grid-column: span 2;
+  aspect-ratio: 16 / 7;
+}
+
+main.comic--comic > .panel:nth-child(2),
+main.comic--comic > .panel:nth-child(3),
+main.comic--comic > .panel:nth-child(4) {
+  aspect-ratio: 4 / 3;
+}
 
 main.comic--grid > .panel {
   aspect-ratio: 4 / 3;
