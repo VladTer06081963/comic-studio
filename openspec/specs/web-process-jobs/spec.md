@@ -3,9 +3,7 @@
 ## Purpose
 
 Обеспечивает безопасный, ограниченный по времени и наблюдаемый запуск Python-операций без shell-интерпретации пользовательских данных и дублирующих jobs.
-
 ## Requirements
-
 ### Requirement: Shell-free process invocation
 Система MUST передавать executable и каждый argument как отдельные значения без shell interpolation, а пользовательский content, styles и scenario IDs SHALL обрабатываться как opaque arguments.
 
@@ -25,7 +23,7 @@
 - **THEN** server сохраняет structured failure outcome и не интерпретирует наличие stdout как success
 
 ### Requirement: Observable render jobs
-Успешно принятый render request SHALL возвращать `202` с stable job ID, scenario ID и job status; клиент SHALL иметь API для получения `queued`, `running`, `succeeded` или `failed` outcome. Job record SHALL включать `type` (`render` или `revision`), `mode` (для render), `revision_kind`, `source_context_preview`, `feedback_count`, timestamps и originating `request_id`.
+Успешно принятый render request SHALL возвращать `202` с stable job ID, scenario ID и job status; клиент SHALL иметь API для получения `queued`, `running`, `succeeded` или `failed` outcome. Job record SHALL включать `type` (`render` или `revision`), `mode` (для render), `revision_kind` (для revision), `source_context_preview`, `feedback_count`, timestamps и originating `request_id`.
 
 #### Scenario: Render job is accepted
 - **WHEN** валидный approved render request успешно поставлен на выполнение
@@ -71,3 +69,4 @@ Explicit rerender SHALL создавать candidate artifacts отдельно 
 #### Scenario: Python executable is unavailable
 - **WHEN** readiness check не может использовать configured Python executable
 - **THEN** readiness endpoint сообщает not ready, а process-backed mutation возвращает service unavailable без создания job
+

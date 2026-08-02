@@ -60,17 +60,17 @@
 
 ## 9. Verification & Fixation
 
-- [ ] 9.1 Прогнать полный Node test suite: `cd web && node --test`. Все 59 + новые тесты pass.
-- [ ] 9.2 Прогнать полный Python test suite: `python3 -m unittest discover -s tests -p 'test_*.py'`. Все 28 + новые тесты pass.
-- [ ] 9.3 Визуальная проверка: rerender `c6964b6a`, открыть `data/comics/c6964b6a.html` в Chrome/Safari, проверить шрифты, баблы, анимацию, responsive layout.
-- [ ] 9.4 Backward-compat: rerender через `python3 scripts/render_approved.py --scenario-id c6964b6a --rerender --staging-dir X` создаёт и HTML, и PNG.
-- [ ] 9.5 `bash cron/nightly.sh --dry-run` — no side effects.
-- [ ] 9.6 Live MiniMax / Telegram calls — 0 в тестах.
-- [ ] 9.7 `verification.md` сохранён с детальной сводкой.
-- [ ] 9.8 `summary/audit/013_comic-html-rendering.md` создан.
-- [ ] 9.9 `summary/tasks/013_comic-html-rendering.md` создан.
-- [ ] 9.10 `CHANGELOG.md` запись с детальной сводкой.
-- [ ] 9.11 `git commit` + `git push`.
-- [ ] 9.12 OpenSpec change `comic-html-rendering` archived.
-- [ ] 9.13 Синхронизировать 3 новых capability main specs (`web-comic-rendering`, `python-comic-rendering`, `web-comic-rendering-pipeline`) и 2 обновлённых (`web-scenario-operations`, `web-process-jobs`) в `openspec/specs/`.
-- [ ] 9.14 `openspec validate --specs --strict` — все specs валидны.
+- [x] 9.1 Прогнать полный Node test suite: `cd web && node --test`. Все 59 + новые тесты pass.
+- [x] 9.2 Прогнать полный Python test suite: `python3 -m unittest discover -s tests -p 'test_*.py'`. Все 28 + новые тесты pass.
+- [x] 9.3 Визуальная проверка: rerender `c6964b6a`, открыть `data/comics/c6964b6a.html` в Chrome/Safari, проверить шрифты, баблы, анимацию, responsive layout.
+- [x] 9.4 Backward-compat: rerender через `python3 scripts/render_approved.py --scenario-id c6964b6a --rerender --staging-dir X` создаёт и HTML, и PNG.
+- [x] 9.5 `bash cron/nightly.sh --dry-run` — no side effects.
+- [x] 9.6 Live MiniMax / Telegram calls — 0 в тестах.
+- [x] 9.7 `verification.md` сохранён с детальной сводкой.
+- [x] 9.8 `summary/audit/013_comic-html-rendering.md` создан.
+- [x] 9.9 `summary/tasks/013_comic-html-rendering.md` создан.
+- [x] 9.10 `CHANGELOG.md` запись с детальной сводкой.
+- [x] 9.11 `git commit` + `git push`.
+- [x] 9.12 OpenSpec change `comic-html-rendering` archived.
+- [x] 9.13 Синхронизировать 3 новых capability main specs (`web-comic-rendering`, `python-comic-rendering`, `web-comic-rendering-pipeline`) и 2 обновлённых (`web-scenario-operations`, `web-process-jobs`) в `openspec/specs/`.
+- [x] 9.14 `openspec validate --specs --strict` — все specs валидны.

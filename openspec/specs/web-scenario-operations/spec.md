@@ -3,9 +3,7 @@
 ## Purpose
 
 Определяет безопасное и предсказуемое поведение filesystem-backed Web API для создания, просмотра и изменения lifecycle сценариев Comic Studio.
-
 ## Requirements
-
 ### Requirement: Validated identifiers and payloads
 Система MUST валидировать scenario IDs, status selectors и JSON payloads до построения filesystem paths или выполнения mutation и SHALL принимать только документированные status, style и value ranges.
 
@@ -129,3 +127,19 @@ Delete API SHALL требовать явное подтверждение, MUST 
 #### Scenario: Mutable scenario is deleted
 - **WHEN** клиент подтверждает delete для допустимого mutable status
 - **THEN** server удаляет canonical scenario, panels, final comic и raw copy, не изменяя `data/archive/`, и возвращает перечень обработанных artifacts
+
+### Requirement: Comic artifacts coverage
+Rendered scenarios MUST иметь как PNG-preview, так и HTML-артефакт, доступные через Web API. PNG-preview используется для backward-compat (Telegram, Notion, archive), HTML — primary artifact для браузера/шеринга. Scenario record хранит `comic_path` (PNG) и `panel_paths` (panels); HTML-путь predictable из `id` (`data/comics/<id>.html`).
+
+#### Scenario: Rendered scenario exposes both artifacts
+- **WHEN** scenario в `rendered` status
+- **THEN** `GET /comics/<id>.png` возвращает 200 `image/png` И `GET /comics/<id>.html` возвращает 200 `text/html` (если HTML был сгенерирован)
+
+#### Scenario: HTML generation is side-effect of render
+- **WHEN** initial render или rerender завершается успешно
+- **THEN** `py/render/comic_assembler.assemble_comic` создаёт и PNG, и HTML+манифест (один pipeline, не отдельные ручные шаги)
+
+#### Scenario: HTML predictable path
+- **WHEN** `assemble_comic` рендерит scenario `c6964b6a`
+- **THEN** HTML создаётся в `data/comics/c6964b6a.html` (predictable, не хранится в scenario record)
+

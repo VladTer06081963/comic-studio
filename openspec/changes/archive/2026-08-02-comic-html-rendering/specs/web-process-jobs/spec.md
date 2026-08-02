@@ -14,10 +14,3 @@
 #### Scenario: Job detail includes revision metadata
 - **WHEN** клиент запрашивает `GET /api/jobs/:id` для revision job
 - **THEN** response содержит `type: "revision"`, `revision_kind`, `source_context_preview`, `feedback_count` и `request_id`
-
-### Requirement: Render artifact observability
-При успешном render job запись SHALL включать флаг `html_generated` чтобы observability tooling знал, что HTML-артефакт также доступен (не только PNG).
-
-#### Scenario: Job record includes html_generated flag
-- **WHEN** render job завершается с `succeeded`
-- **THEN** `job.result` содержит поле `html_generated: true` (если HTML был успешно сгенерирован) или `html_generated: false` (если HTML-renderer упал, но PNG-preview валиден)

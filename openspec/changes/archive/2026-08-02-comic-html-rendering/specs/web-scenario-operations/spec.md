@@ -3,6 +3,14 @@
 ### Requirement: Render lifecycle policy
 Render API SHALL разрешать initial render только для `approved`, SHALL требовать явное подтверждение re-render для `rendered` и MUST отклонять `draft`, `rejected` и `published` до запуска render process. Render, re-render и publication MUST оставаться заблокированы до повторного approval после revision. Сервер SHALL блокировать initial render, re-render и publication с `409` error code `APPROVAL_REQUIRED`, пока scenario не вернётся в `approved` с новым `approved_at` timestamp.
 
+#### Scenario: Approved scenario starts initial render
+- **WHEN** клиент вызывает render для canonical approved scenario
+- **THEN** server принимает initial render и создаёт один render job
+
+#### Scenario: Rendered scenario lacks explicit rerender mode
+- **WHEN** клиент вызывает обычный render для status `rendered` без явного rerender request
+- **THEN** server возвращает `409` с error code `RERENDER_CONFIRMATION_REQUIRED` и не запускает process
+
 #### Scenario: Render blocked after revision
 - **WHEN** scenario находится в `draft` после успешного revision
 - **THEN** server возвращает `409` с error code `APPROVAL_REQUIRED` и не создаёт render job
@@ -10,6 +18,16 @@ Render API SHALL разрешать initial render только для `approved
 #### Scenario: Render allowed after re-approval
 - **WHEN** scenario возвращается в `approved` после повторного approval
 - **THEN** render policy снова разрешает initial render
+
+#### Scenario: Published scenario is requested for render
+- **WHEN** клиент вызывает render или rerender для status `published`
+- **THEN** server возвращает `409` с error code `PUBLISHED_IMMUTABLE` и не изменяет scenario или artifacts
+
+#### Scenario: Draft or rejected scenario is requested for render
+- **WHEN** render вызывается для status `draft` или `rejected`
+- **THEN** server возвращает `409` с error code `APPROVAL_REQUIRED` и не запускает process
+
+## ADDED Requirements
 
 ### Requirement: Comic artifacts coverage
 Rendered scenarios MUST иметь как PNG-preview, так и HTML-артефакт, доступные через Web API. PNG-preview используется для backward-compat (Telegram, Notion, archive), HTML — primary artifact для браузера/шеринга. Scenario record хранит `comic_path` (PNG) и `panel_paths` (panels); HTML-путь predictable из `id` (`data/comics/<id>.html`).
