@@ -11,7 +11,7 @@
 
 ---
 
-## Процедура (4 шага)
+## Процедура (5 шагов)
 
 ### Шаг 1: OpenSpec Change
 Если есть незаархивированный change в `openspec/changes/`:
@@ -46,7 +46,17 @@ mv openspec/changes/<name>/ openspec/changes/archive/YYYY-MM-DD-<name>/
 | 1 | ... | ✅ Done |
 ```
 
-### Шаг 4: Git
+### Шаг 4: CHANGELOG
+
+Добавить краткую запись в конец `CHANGELOG.md`:
+
+```markdown
+- `YYYY-MM-DDTHH:MM:SS+TZ` — Краткое описание изменения.
+```
+
+Записи ведутся по нарастающей, от ранних к поздним. Не добавлять секреты, токены и содержимое `.env`.
+
+### Шаг 5: Git
 ```bash
 git add <все изменённые файлы>
 git commit -m "<type>: <description>"
@@ -58,7 +68,8 @@ git push  # если есть remote
 ## Чеклист завершения
 
 - [ ] Аудит создан
-- [ ] Таски созданы  
+- [ ] Таски созданы
+- [ ] `CHANGELOG.md` обновлён
 - [ ] Git clean (всё закоммичено)
 - [ ] OpenSpec change заархивирован (если был)
 - [ ] Пуш на GitHub (если remote настроен)
@@ -75,6 +86,7 @@ git push  # если есть remote
 
 ✓ summary/audit/002_logging.md создан
 ✓ summary/tasks/002_logging.md создан
+✓ CHANGELOG.md обновлён
 ✓ git commit + push
 ```
 

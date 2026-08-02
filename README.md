@@ -70,4 +70,5 @@ data/
 
 - [`docs/architecture.md`](docs/architecture.md) — детальная архитектура
 - [`docs/workflow.md`](docs/workflow.md) — пошаговый workflow с примерами
+- [`CHANGELOG.md`](CHANGELOG.md) — хронология изменений проекта
 - [`CLAUDE.md`](CLAUDE.md) — инструкции для AI-агента при работе с проектом

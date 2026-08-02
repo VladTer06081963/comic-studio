@@ -102,11 +102,13 @@ bash cron/nightly.sh
 Когда пользователь говорит **"фиксируем"**, **"фиксация"**, **"зафиксируй"** — выполни процедуру:
 
 1. **Спросить тему задачи** если не ясно
-2. **Создать аудит:** `summary/audit/<NNN>_<slug>.md`
-3. **Создать таски:** `summary/tasks/<NNN>_<slug>.md`
-4. **Закоммитить:** `git add ... && git commit -m "..." && git push`
+2. **Проверить OpenSpec:** синхронизировать delta specs и архивировать active change, если он есть
+3. **Создать аудит:** `summary/audit/<NNN>_<slug>.md`
+4. **Создать таски:** `summary/tasks/<NNN>_<slug>.md`
+5. **Обновить `CHANGELOG.md`:** добавить в конец краткую запись с ISO-8601 timestamp
+6. **Закоммитить:** `git add ... && git commit -m "..." && git push`
 
-**Если есть OpenSpec change** — архивировать в `openspec/changes/archive/YYYY-MM-DD-<name>/`
+Записи в `CHANGELOG.md` ведутся по нарастающей — от ранних к поздним. Не включать секреты и содержимое `.env`.
 
 ## НЕ делать
 
