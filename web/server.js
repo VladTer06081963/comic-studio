@@ -1,309 +1,47 @@
-// web/server.js — Express API + статический хостинг UI
-import express from 'express';
-import cors from 'cors';
+// web/server.js — hardened Express bootstrap for Comic Studio.
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs';
 import dotenv from 'dotenv';
 
-dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env') });
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.join(__dirname, '..');
-const DATA_DIR = path.join(PROJECT_ROOT, 'data');
-const VENV_PYTHON = path.join(PROJECT_ROOT, '.venv', 'bin', 'python3');
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+const [{ loadConfig }, { createRuntime }, { createApp }] = await Promise.all([
+  import('./lib/config.js'),
+  import('./lib/runtime.js'),
+  import('./app.js'),
+]);
 
-// ── Static serving ─────────────────────────────────────────────────────────────
-app.use('/ui', express.static(path.join(PROJECT_ROOT, 'ui')));
-app.use('/comics', express.static(path.join(DATA_DIR, 'comics')));
-app.use('/scenarios', express.static(path.join(DATA_DIR, 'scenarios')));
-
-// ── Atomic state helper ────────────────────────────────────────────────────────
-function atomicWrite(filePath, data) {
-  const tmp = filePath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tmp, filePath);  // atomic on POSIX
+let config;
+try {
+  config = loadConfig(process.env);
+} catch (error) {
+  console.error(JSON.stringify({ level: 'ERROR', component: 'web.config', code: error.code || 'INVALID_CONFIGURATION', message: error.message }));
+  process.exit(1);
 }
 
-function moveScenarioAtomic(src, dst) {
-  if (!fs.existsSync(src)) return null;
-  const sc = JSON.parse(fs.readFileSync(src, 'utf-8'));
-  atomicWrite(dst, sc);
-  fs.unlinkSync(src);
-  return sc;
-}
-
-function validateScenarioExists(id, expectedDir) {
-  const p = path.join(DATA_DIR, 'scenarios', expectedDir, `${id}.json`);
-  if (!fs.existsSync(p)) return { error: 'Not found', status: 404 };
-  return { path: p, data: JSON.parse(fs.readFileSync(p, 'utf-8')) };
-}
-
-// ── API: scenario lists ───────────────────────────────────────────────────────
-// API: список сценариев
-app.get('/api/scenarios', (req, res) => {
-  const status = req.query.status || 'all';
-  if (status === 'all') {
-    const all = [];
-    for (const s of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
-      const dir = path.join(DATA_DIR, 'scenarios', s);
-      if (!fs.existsSync(dir)) continue;
-      for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) {
-        all.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8')));
-      }
-    }
-    return res.json(all);
-  }
-  const dir = path.join(DATA_DIR, 'scenarios', status);
-  if (!fs.existsSync(dir)) return res.json([]);
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
-  const scenarios = files.map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8')));
-  res.json(scenarios);
-});
-
-// API: создать сценарий
-app.post('/api/scenarios', async (req, res) => {
-  const { content, image_style, caption_style } = req.body;
-  if (!content) return res.status(400).json({ error: 'content required' });
-
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
-
-  let cmd = `${VENV_PYTHON} scripts/ingest_and_draft.py --skip-notify --image-style ${image_style || 'comic'} --style ${caption_style || 'bubble'} `;
-  if (content.startsWith('http://') || content.startsWith('https://')) {
-    if (content.includes('youtube.com') || content.includes('youtu.be')) {
-      cmd += `--youtube ${JSON.stringify(content)}`;
-    } else {
-      cmd += `--url ${JSON.stringify(content)}`;
-    }
-  } else {
-    cmd += `--freeform ${JSON.stringify(content)}`;
-  }
-
-  try {
-    const { stdout } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
-    const match = stdout.match(/ID:\s*([a-zA-Z0-9_-]+)/);
-    if (match && match[1]) {
-      res.json({ ok: true, id: match[1] });
-    } else {
-      res.json({ ok: true, output: stdout });
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// API: один сценарий
-app.get('/api/scenarios/:id', (req, res) => {
-  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
-    const p = path.join(DATA_DIR, 'scenarios', status, `${req.params.id}.json`);
-    if (fs.existsSync(p)) return res.json(JSON.parse(fs.readFileSync(p, 'utf-8')));
-  }
-  res.status(404).json({ error: 'Not found' });
-});
-
-// API: approve — draft → approved
-app.post('/api/scenarios/:id/approve', (req, res) => {
-  const id = req.params.id;
-  const draft = path.join(DATA_DIR, 'scenarios', 'draft', `${id}.json`);
-  const approved = path.join(DATA_DIR, 'scenarios', 'approved', `${id}.json`);
-
-  // Idempotent: already approved
-  if (fs.existsSync(approved)) {
-    const sc = JSON.parse(fs.readFileSync(approved, 'utf-8'));
-    return res.json({ ok: true, id, status: sc.status, idempotent: true });
-  }
-
-  if (!fs.existsSync(draft)) return res.status(404).json({ error: 'Not found' });
-  const sc = JSON.parse(fs.readFileSync(draft, 'utf-8'));
-
-  // Only draft → approved is allowed from the API
-  if (sc.status !== 'draft') {
-    return res.status(409).json({ error: `Cannot approve: status is '${sc.status}'` });
-  }
-
-  sc.status = 'approved';
-  sc.approved_at = new Date().toISOString();
-  atomicWrite(approved, sc);
-  fs.unlinkSync(draft);
-  res.json({ ok: true, id, status: 'approved' });
-});
-
-// API: delete scenario — removes scenario file + comic + panels
-app.delete('/api/scenarios/:id', (req, res) => {
-  const id = req.params.id;
-
-  // Find scenario in any status
-  let scPath = null;
-  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
-    const p = path.join(DATA_DIR, 'scenarios', status, `${id}.json`);
-    if (fs.existsSync(p)) {
-      scPath = p;
-      break;
-    }
-  }
-
-  if (!scPath) return res.status(404).json({ error: 'Not found' });
-
-  // Remove scenario file
-  fs.unlinkSync(scPath);
-
-  // Remove comic file + panels directory
-  const comicPng = path.join(DATA_DIR, 'comics', `${id}.png`);
-  if (fs.existsSync(comicPng)) fs.unlinkSync(comicPng);
-
-  const panelsDir = path.join(DATA_DIR, 'comics', id);
-  if (fs.existsSync(panelsDir)) {
-    fs.rmSync(panelsDir, { recursive: true, force: true });
-  }
-
-  // Remove raw copy
-  const rawPng = path.join(DATA_DIR, 'comics', 'raw', `${id}.png`);
-  if (fs.existsSync(rawPng)) fs.unlinkSync(rawPng);
-
-  console.log(`🗑 Deleted scenario ${id}`);
-  res.json({ ok: true, id });
-});
-
-// API: render — запустить рендер сценария
-app.post('/api/scenarios/:id/render', async (req, res) => {
-  const id = req.params.id;
-  const { seed } = req.body || {};
-
-  // Найти сценарий
-  let scPath = null;
-  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
-    const p = path.join(DATA_DIR, 'scenarios', status, `${id}.json`);
-    if (fs.existsSync(p)) {
-      scPath = p;
-      break;
-    }
-  }
-
-  if (!scPath) return res.status(404).json({ error: 'Not found' });
-
-  // Если передан seed — обновить в сценарии
-  if (seed !== undefined) {
-    const sc = JSON.parse(fs.readFileSync(scPath, 'utf-8'));
-    sc.seed = parseInt(seed) || 0;
-    atomicWrite(scPath, sc);
-  }
-
-  // Запустить render в фоне
-  const { exec } = await import('child_process');
-  const cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
-  exec(cmd, { cwd: PROJECT_ROOT }, (err, stdout, stderr) => {
-    if (err) console.error(`Render error for ${id}:`, err);
-    else console.log(`Render done for ${id}`);
-  });
-
-  res.json({ ok: true, id, status: 'rendering' });
-});
-
-// API: update seed
-app.post('/api/scenarios/:id/seed', (req, res) => {
-  const id = req.params.id;
-  const { seed } = req.body;
-  if (seed === undefined) return res.status(400).json({ error: 'seed required' });
-
-  let scPath = null;
-  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
-    const p = path.join(DATA_DIR, 'scenarios', status, `${id}.json`);
-    if (fs.existsSync(p)) {
-      scPath = p;
-      break;
-    }
-  }
-
-  if (!scPath) return res.status(404).json({ error: 'Not found' });
-
-  const sc = JSON.parse(fs.readFileSync(scPath, 'utf-8'));
-  sc.seed = parseInt(seed) || 0;
-  atomicWrite(scPath, sc);
-
-  res.json({ ok: true, id, seed: sc.seed });
-});
-
-// API: feedback — добавить правку
-app.post('/api/scenarios/:id/feedback', (req, res) => {
-  const id = req.params.id;
-  const { text } = req.body;
-  if (!text || !text.trim()) {
-    return res.status(400).json({ error: 'text required' });
-  }
-
-  // Найти сценарий в любом статусе
-  let sc = null;
-  let scPath = null;
-  for (const status of ['draft', 'approved', 'rejected', 'rendered', 'published']) {
-    const p = path.join(DATA_DIR, 'scenarios', status, `${id}.json`);
-    if (fs.existsSync(p)) {
-      sc = JSON.parse(fs.readFileSync(p, 'utf-8'));
-      scPath = p;
-      break;
-    }
-  }
-
-  if (!sc) return res.status(404).json({ error: 'Not found' });
-
-  sc.feedback = sc.feedback || [];
-  sc.feedback.push({
-    ts: new Date().toISOString(),
-    text: text.trim(),
-    source: 'web-ui',
-  });
-  atomicWrite(scPath, sc);
-
-  res.json({
-    ok: true,
-    id,
-    feedback_count: sc.feedback.length,
+const runtime = createRuntime(config);
+const app = createApp(runtime);
+const server = app.listen(config.port, config.host, () => {
+  runtime.logger.info('web.started', {
+    host: config.host,
+    port: config.port,
+    mode: config.remoteMode ? 'remote' : 'local',
+    ui: `http://${config.host}:${config.port}/ui/`,
   });
 });
 
-// API: reject — draft → rejected
-app.post('/api/scenarios/:id/reject', (req, res) => {
-  const id = req.params.id;
-  const draft = path.join(DATA_DIR, 'scenarios', 'draft', `${id}.json`);
-  const rejected = path.join(DATA_DIR, 'scenarios', 'rejected', `${id}.json`);
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  runtime.logger.warn('web.shutdown.started', { signal });
+  server.close();
+  await runtime.shutdown();
+  runtime.logger.info('web.shutdown.complete', { signal });
+}
 
-  if (!fs.existsSync(draft)) return res.status(404).json({ error: 'Not found' });
-  const sc = JSON.parse(fs.readFileSync(draft, 'utf-8'));
+process.once('SIGINT', () => shutdown('SIGINT').finally(() => process.exit(0)));
+process.once('SIGTERM', () => shutdown('SIGTERM').finally(() => process.exit(0)));
 
-  if (sc.status !== 'draft') {
-    return res.status(409).json({ error: `Cannot reject: status is '${sc.status}'` });
-  }
-
-  sc.status = 'rejected';
-  sc.rejected_at = new Date().toISOString();
-  atomicWrite(rejected, sc);
-  fs.unlinkSync(draft);
-  res.json({ ok: true, id, status: 'rejected' });
-});
-
-// API: список готовых комиксов
-app.get('/api/comics', (req, res) => {
-  const dir = path.join(DATA_DIR, 'comics');
-  if (!fs.existsSync(dir)) return res.json([]);
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.png'));
-  res.json(files.map(f => ({
-    filename: f,
-    url: `/comics/${f}`,
-    created: fs.statSync(path.join(dir, f)).mtime,
-  })));
-});
-
-// Health
-app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🎨 Comic Studio API → http://localhost:${PORT}`);
-  console.log(`   UI: http://localhost:${PORT}/ui/`);
-  console.log(`   Comics: http://localhost:${PORT}/comics/`);
-});
+export { app, server, runtime };

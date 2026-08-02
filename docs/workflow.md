@@ -1,85 +1,208 @@
 # Workflow Comic Studio
 
-## Типичный день
+## 1. Настройка
 
-### Утро — заготовка материала
-1. Читаете статью / смотрите YouTube / формулируете идею
-2. Запускаете:
-   ```bash
-   cd ~/Projects/comic-studio
-   source .venv/bin/activate
+```bash
+cd ~/Projects/comic-studio
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r py/requirements.txt
+cd web && npm install && cd ..
+cd tg-bot && npm install && cd ..
+cp .env.example .env
+```
 
-   # Из URL
-   python scripts/ingest_and_draft.py --url "https://example.com/article" --tone funny
+Для генерации нужен `MINIMAX_API_KEY`. Telegram, Notion, site и social settings опциональны для соответствующих этапов.
 
-   # Из YouTube
-   python scripts/ingest_and_draft.py --youtube "https://youtu.be/..."
+## 2. Создание draft
 
-   # Из мысли
-   python scripts/ingest_and_draft.py --freeform "Идея про пожарного, который..."
-   ```
-3. В Telegram получаете черновик с кнопками
+### URL
 
-### Утверждение
-4. Нажимаете ✅ Утвердить (или ✏️ с правками)
-5. Сценарий переходит в `data/scenarios/approved/`
+```bash
+python scripts/ingest_and_draft.py \
+  --url "https://example.com/article" \
+  --tone funny --panels 3 \
+  --image-style comic --style bubble
+```
 
-### Ручной рендер
+### YouTube
+
+```bash
+python scripts/ingest_and_draft.py --youtube "https://youtu.be/..."
+```
+
+### Freeform
+
+```bash
+python scripts/ingest_and_draft.py --freeform "Идея про пожарного, который спасает котёнка"
+```
+
+Результат:
+
+```text
+data/scenarios/draft/<id>.json
+```
+
+## 3. Ручное approval
+
+Разрешены два author-controlled channel:
+
+1. Telegram bot для configured `TELEGRAM_CHAT_ID`.
+2. Web UI в local mode или authenticated remote mode.
+
+```bash
+node tg-bot/bot.js
+node web/server.js
+```
+
+Web UI:
+
+```text
+http://127.0.0.1:3000/ui/
+```
+
+Approval переводит только `draft → approved`. Initial image generation без persisted approval запрещена.
+
+## 4. Initial render
+
+CLI:
+
 ```bash
 python scripts/render_approved.py --scenario-id abc12345
 ```
-Или все сразу:
+
+Все approved:
+
 ```bash
 python scripts/render_approved.py --all
 ```
 
-### Публикация
+Web API:
+
+```http
+POST /api/scenarios/abc12345/render
+Content-Type: application/json
+
+{"mode":"initial"}
+```
+
+API возвращает `202` и job ID. Статус проверяется через:
+
+```http
+GET /api/jobs/<job-id>
+```
+
+После успешной assembly:
+
+```text
+data/scenarios/rendered/<id>.json
+data/comics/<id>.png
+data/comics/<id>/panel_*.png
+```
+
+## 5. Rerender до публикации
+
+Только `rendered` допускает явный rerender:
+
+```http
+POST /api/scenarios/abc12345/render
+Content-Type: application/json
+
+{"mode":"rerender","seed":12345}
+```
+
+Candidate panels создаются в staging. Текущий comic заменяется только после проверки candidate final PNG. При failure старый rendered result остаётся доступен.
+
+Standalone seed mutation разрешена только для `draft`/`approved`. Для `rendered` новый seed передаётся вместе с rerender.
+
+## 6. Запросы на правку
+
+Текущий Web endpoint:
+
+```http
+POST /api/scenarios/<id>/feedback
+Content-Type: application/json
+
+{"text":"Сделать концовку смешнее"}
+```
+
+Он сохраняет timestamped revision request и возвращает `feedback_recorded`. Он пока **не меняет** prompts/captions и не запускает LLM. Настоящая regeneration и повторный approval описаны в `docs/roadmap.md`.
+
+Для `published` feedback блокируется: опубликованный record неизменяем.
+
+## 7. Delete
+
+Mutable scenario удаляется только с явным подтверждением:
+
+```http
+DELETE /api/scenarios/<id>?confirm=true
+```
+
+Удаление проходит через staged trash. Нельзя удалить:
+
+- `published`;
+- что-либо из `data/archive/`.
+
+## 8. Publication
+
 ```bash
 node scripts/publish_rendered.js
 ```
 
-## Cron-режим (ночной выпуск серии)
+Site adapter работает только при configured `SITE_API_URL`. Social adapters пока placeholders; Notion comic mirror не реализован. Проверяйте deployment adapter до изменения статуса production content.
 
-Каждый день в 02:00 `cron/nightly.sh`:
-1. Берёт все approved сценарии
-2. Рендерит (≤4 параллельно)
-3. Публикует на сайт + соцсети
-4. Архивирует в `data/archive/YYYY-MM-DD/`
-5. Уведомляет в Telegram
+После успешной публикации `published` должен рассматриваться read-only. Будущая переработка создаёт новый draft/remix, а не меняет published record.
 
-Настройка cron через Hermes:
+## 9. Nightly
+
+Безопасный просмотр плана:
+
 ```bash
-hermes cron create --schedule "0 2 * * *" \
-  --prompt "Запусти bash /Users/vladteresena/Projects/comic-studio/cron/nightly.sh и сообщи результат" \
-  --name "comic-studio-nightly"
+bash cron/nightly.sh --dry-run
 ```
 
-## Типы сценариев
+Реальный запуск:
 
-### Одиночный комикс (3-4 панели)
-- `--panels 3` или `4`
-- Используется для коротких историй
+```bash
+bash cron/nightly.sh
+```
 
-### Character-consistent (тот же персонаж)
-- Добавьте `--character-ref path/to/ref.jpg` в `py/render/minimax_client.py`
-- Через `make_comic_character.py` из minimax-comic skill
+Вторая команда выполняет render/publication/archive side effects. Nightly publication hardening остаётся отдельной задачей.
 
-### Серия (несколько выпусков об одном)
-- Генерируйте несколько сценариев на одну тему
-- В промте указывайте "this is episode 2 of a series"
-- Notion-зеркало хранит связь по `series_id`
+Пример внешнего schedule:
 
-## Что добавить
+```cron
+0 2 * * * /Users/vladteresena/Projects/comic-studio/cron/nightly.sh
+```
 
-- **Веб-интерфейс для редактирования промтов** — кнопка ✏️ в UI сейчас заглушка
-- **Авто-публикация превью** — загружать panel_1.png как превью в Telegram при отправке сценария
-- **Расписание выпусков** — не только cron, но и конкретные даты
-- **Метрики** — сколько утверждено / отклонено / опубликовано
+## 10. Web remote mode
 
-## Что НЕ делать
+Local mode является default. Для remote:
 
-- ❌ Рендерить комикс без утверждения
-- ❌ Публиковать черновик
-- ❌ Менять файлы в `data/archive/` (immutable)
-- ❌ Удалять `data/scenarios/` без бэкапа
-- ❌ Коммитить `.env`
+```env
+HOST=0.0.0.0
+WEB_API_TOKEN=<long-random-token>
+WEB_ALLOWED_ORIGINS=https://studio.example
+```
+
+Если token или origins отсутствуют, server не запускается. UI запрашивает token и хранит его только до закрытия browser session.
+
+## 11. Recovery
+
+- `queued/running` jobs после restart становятся `interrupted`; автоматического платного retry нет.
+- Interrupted lifecycle transition восстанавливается из pending metadata или блокируется fail-closed.
+- Failed rerender не заменяет current comic.
+- Partial delete откатывается из `data/.trash/` manifest.
+- Не редактируйте `data/archive/` для recovery.
+
+## 12. Проверка
+
+```bash
+cd web && npm test && cd ..
+python -m unittest tests.test_render_approved -v
+python -m compileall -q py scripts tests
+bash -n cron/nightly.sh
+bash cron/nightly.sh --dry-run
+```
+
+Все automated render tests используют mocks и не вызывают MiniMax.

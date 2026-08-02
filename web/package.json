@@ -1,1 +1,17 @@
-{"name": "comic-studio-web", "version": "0.1.0", "description": "Express API for Comic Studio", "main": "server.js", "type": "module", "scripts": {"start": "node server.js", "dev": "node --watch server.js"}, "dependencies": {"express": "^4.19.0", "cors": "^2.8.5", "dotenv": "^16.4.0", "multer": "^1.4.5-lts.1"}}
+{
+  "name": "comic-studio-web",
+  "version": "0.2.0",
+  "description": "Hardened Express API for Comic Studio",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "test:watch": "node --test --watch --test-concurrency=1 tests/*.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "express": "^4.19.0"
+  }
+}

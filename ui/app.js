@@ -1,5 +1,8 @@
 // ui/app.js — dashboard logic
 
+const apiFetch = (...args) => window.comicStudio.apiFetch(...args);
+const apiError = data => window.comicStudio.errorMessage(data);
+
 const IMAGE_STYLE_EMOJI = {
   cartoon: '🎬',
   anime: '🎌',
@@ -24,7 +27,7 @@ function getImageStyleBadge(style) {
 
 function getFeedbackBadge(count) {
   if (!count || count === 0) return '';
-  return `<span class="feedback-badge" title="Количество правок">💬 ${count} прав${count === 1 ? 'ка' : count < 5 ? 'ки' : 'ок'}</span>`;
+  return `<span class="feedback-badge" title="Запросы на правку">💬 ${count} запрос${count === 1 ? '' : count < 5 ? 'а' : 'ов'}</span>`;
 }
 
 // Edit Modal Logic
@@ -49,14 +52,14 @@ document.getElementById('delete-confirm')?.addEventListener('click', async () =>
   btn.disabled = true;
   btn.textContent = '⏳ Удаление...';
   try {
-    const res = await fetch(`/api/scenarios/${currentDeleteId}`, { method: 'DELETE' });
+    const res = await apiFetch(`/api/scenarios/${currentDeleteId}?confirm=true`, { method: 'DELETE' });
     const data = await res.json();
     if (data.ok) {
       closeDeleteModal();
       const activeTab = document.querySelector('nav button.active').dataset.tab;
       loadTab(activeTab);
     } else {
-      alert(`Ошибка: ${data.error}`);
+      alert(`Ошибка: ${apiError(data)}`);
     }
   } catch (err) {
     alert(`Ошибка: ${err.message}`);
@@ -99,10 +102,10 @@ document.getElementById('edit-save')?.addEventListener('click', async () => {
 
   const btn = document.getElementById('edit-save');
   btn.disabled = true;
-  btn.textContent = '⏳ Сохранение...';
+  btn.textContent = '⏳ Сохранение запроса...';
 
   try {
-    const res = await fetch(`/api/scenarios/${currentEditId}/feedback`, {
+    const res = await apiFetch(`/api/scenarios/${currentEditId}/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
@@ -110,17 +113,18 @@ document.getElementById('edit-save')?.addEventListener('click', async () => {
     const data = await res.json();
     if (data.ok) {
       closeEditModal();
+      alert('Запрос на правку сохранён. LLM-регенерация будет добавлена отдельным этапом.');
       // Reload current tab
       const activeTab = document.querySelector('nav button.active').dataset.tab;
       loadTab(activeTab);
     } else {
-      alert(`Ошибка: ${data.error}`);
+      alert(`Ошибка: ${apiError(data)}`);
     }
   } catch (err) {
     alert(`Ошибка: ${err.message}`);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Сохранить';
+    btn.textContent = 'Сохранить запрос';
   }
 });
 
@@ -139,7 +143,7 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
   result.innerHTML = '⏳ Создаю сценарий...';
 
   try {
-    const res = await fetch('/api/scenarios', {
+    const res = await apiFetch('/api/scenarios', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, image_style: imageStyle, caption_style: captionStyle }),
@@ -151,7 +155,7 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
       // Refresh draft tab
       loadTab('draft');
     } else {
-      result.innerHTML = `❌ Ошибка: ${data.error}`;
+      result.innerHTML = `❌ Ошибка: ${escapeHtml(apiError(data))}`;
     }
   } catch (err) {
     result.innerHTML = `❌ Ошибка: ${err.message}`;
@@ -171,9 +175,10 @@ tabs.forEach(t => t.addEventListener('click', () => {
 
 async function loadTab(name) {
   if (name === 'comics') return loadComics();
-  if (name === 'help') return; // Static content, no fetch needed
-  const res = await fetch(`/api/scenarios?status=${name}`);
-  const scenarios = await res.json();
+  if (name === 'help' || name === 'create') return; // Static/local form content, no fetch needed
+  const res = await apiFetch(`/api/scenarios?status=${name}`);
+  const payload = await res.json();
+  const scenarios = Array.isArray(payload) ? payload : (payload.items || []);
   const container = document.getElementById(`${name}-list`);
   if (!scenarios.length) {
     container.innerHTML = '<div class="empty">Пусто</div>';
@@ -187,23 +192,33 @@ function scenarioCard(sc, status) {
   const panels = sc.panels.slice(0, 3).map(p => `<div>${p.n}. ${escapeHtml(p.caption)}</div>`).join('');
   const more = sc.panels.length > 3 ? `<div>…+${sc.panels.length - 3}</div>` : '';
   const imageStyleBadge = getImageStyleBadge(sc.image_style || 'comic');
-  const feedbackBadge = getFeedbackBadge((sc.feedback || []).length);
+  const feedbackBadge = getFeedbackBadge(sc.feedback_count ?? (sc.feedback || []).length);
   const seedBadge = sc.seed !== undefined ? `<span class="tag">🎲 ${sc.seed}</span>` : '';
   const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge} ${feedbackBadge} ${seedBadge}`;
-  const renderBtn = `<button class="render" data-id="${sc.id}" data-action="render">🎨 Рендер</button>`;
-  const actions = status === 'draft' ? `
+  const renderBtn = `<button class="render" data-id="${sc.id}" data-action="render">${status === 'rendered' ? '🔄 Re-render' : '🎨 Рендер'}</button>`;
+  const seedBtn = status === 'rendered'
+    ? `<button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed + re-render</button>`
+    : `<button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed</button>`;
+  let actions;
+  if (status === 'draft') {
+    actions = `
     <div class="actions">
       <button class="approve" data-id="${sc.id}" data-action="approve">✅ Утвердить</button>
       <button class="reject" data-id="${sc.id}" data-action="reject">❌ Отклонить</button>
-      <button class="edit" data-id="${sc.id}" data-action="edit">✏️ Редактировать</button>
-      <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
-    </div>` : `
-    <div class="actions">
-      <button class="edit" data-id="${sc.id}" data-action="edit">✏️ Редактировать</button>
-      ${renderBtn}
-      <button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed</button>
+      <button class="edit" data-id="${sc.id}" data-action="edit">💬 Запросить правку</button>
       <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
     </div>`;
+  } else if (status === 'approved' || status === 'rendered') {
+    actions = `
+    <div class="actions">
+      <button class="edit" data-id="${sc.id}" data-action="edit">💬 Запросить правку</button>
+      ${renderBtn}
+      ${seedBtn}
+      <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
+    </div>`;
+  } else {
+    actions = `<div class="actions"><span class="tag">🔒 Только чтение</span></div>`;
+  }
   return `
     <div class="card">
       <h3>${escapeHtml(sc.title)}</h3>
@@ -232,7 +247,11 @@ function attachHandlers(status) {
         btn.disabled = true;
         btn.textContent = '⏳ Рендер...';
         try {
-          const res = await fetch(`/api/scenarios/${id}/render`, { method: 'POST' });
+          const res = await apiFetch(`/api/scenarios/${id}/render`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: status === 'rendered' ? 'rerender' : 'initial' }),
+          });
           const data = await res.json();
           if (data.ok) {
             btn.textContent = '🎨 Рендер запущен';
@@ -255,11 +274,17 @@ function attachHandlers(status) {
         const seed = newSeed.trim() === '' ? Math.floor(Math.random() * 1000000) : parseInt(newSeed);
         if (isNaN(seed)) return alert('Некорректный seed');
         try {
-          const res = await fetch(`/api/scenarios/${id}/seed`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ seed }),
-          });
+          const res = status === 'rendered'
+            ? await apiFetch(`/api/scenarios/${id}/render`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: 'rerender', seed }),
+              })
+            : await apiFetch(`/api/scenarios/${id}/seed`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ seed }),
+              });
           const data = await res.json();
           if (data.ok) {
             loadTab(status);
@@ -279,7 +304,7 @@ function attachHandlers(status) {
       const action = btn.dataset.action;
       btn.disabled = true;
       btn.textContent = '⏳';
-      const res = await fetch(`/api/scenarios/${id}/${action}`, { method: 'POST' });
+      const res = await apiFetch(`/api/scenarios/${id}/${action}`, { method: 'POST' });
       const result = await res.json();
       if (result.ok) {
         btn.textContent = action === 'approve' ? '✅' : '❌';
@@ -292,7 +317,7 @@ function attachHandlers(status) {
 }
 
 async function loadComics() {
-  const res = await fetch('/api/comics');
+  const res = await apiFetch('/api/comics');
   const comics = await res.json();
   const container = document.getElementById('comics-list');
   if (!comics.length) {

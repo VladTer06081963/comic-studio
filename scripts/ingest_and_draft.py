@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -39,7 +38,6 @@ def _notify_telegram(message: str) -> None:
         return
     try:
         import urllib.request
-        import urllib.parse
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = json.dumps({
             "chat_id": chat_id,
@@ -90,6 +88,7 @@ def main():
     ap.add_argument("--panels", type=int, default=3, help="Количество панелей (3-4)")
     ap.add_argument("--seed", type=int, help="Seed для детерминированного рендера")
     ap.add_argument("--skip-notify", action="store_true", help="Пропустить Telegram-уведомление")
+    ap.add_argument("--json-result", action="store_true", help="Вывести machine-readable JSON result последней строкой")
     args = ap.parse_args()
 
     # 1. Ingest
@@ -147,6 +146,14 @@ def main():
         print(f"\n→ Запустите Telegram-бот и утвердите сценарий:")
         print(f"   node tg-bot/bot.js")
         print(f"   или отправьте ID {scenario['id']} вручную боту.\n")
+
+    if args.json_result:
+        print(json.dumps({
+            "ok": True,
+            "id": scenario["id"],
+            "status": scenario["status"],
+            "path": out_path,
+        }, ensure_ascii=False))
 
 
 if __name__ == "__main__":

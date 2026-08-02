@@ -45,3 +45,5 @@
 ## 2026-08-02
 
 - `2026-08-02T10:12:38+03:00` — Проведён аудит документации, кода, PRD, summary и OpenSpec; добавлен накопительный `CHANGELOG.md` и правило его обновления при фиксации.
+- `2026-08-02T11:33:52+03:00` — Hardened Web API: local/remote access control, atomic lifecycle, shell-free processes, durable render jobs, staging rerender, recoverable delete, tests и актуальная документация.
+- `2026-08-02T11:42:14+03:00` — Зафиксирован и архивирован OpenSpec change `harden-web-server-api`: 4 main specs синхронизированы в `openspec/specs/`, 61/61 tasks complete, verification summary сохранён.

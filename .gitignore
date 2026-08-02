@@ -34,6 +34,13 @@ data/scenarios/draft/*
 data/scenarios/approved/*
 data/scenarios/rejected/
 data/scenarios/rendered/*
+data/scenarios/published/*
+
+# Runtime jobs and source artifacts
+data/jobs/*
+data/.staging/*
+data/.trash/*
+data/freeform/*
 
 # Comics output
 data/comics/**/*.png
@@ -44,6 +51,7 @@ data/comics/**/*.json
 !data/scenarios/approved/.gitkeep
 !data/scenarios/rejected/.gitkeep
 !data/scenarios/rendered/.gitkeep
+!data/scenarios/published/.gitkeep
 !data/comics/.gitkeep
 !data/logs/.gitkeep
 !data/archive/.gitkeep

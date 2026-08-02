@@ -9,8 +9,6 @@ from datetime import datetime as _dt
 
 import json
 import os
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -135,14 +133,42 @@ def reject(scenario_id: str) -> Optional[dict]:
     return transition(scenario_id, from_status="draft", to_status="rejected")
 
 
-def mark_rendered(scenario_id: str, comic_path: str) -> Optional[dict]:
-    """Mark an approved scenario as rendered with comic path. Idempotent."""
+def mark_rendered(
+    scenario_id: str,
+    comic_path: str,
+    panel_paths: Optional[list[str]] = None,
+    seed: Optional[int] = None,
+) -> Optional[dict]:
+    """Mark an approved scenario as rendered with canonical artifact metadata."""
+    extra: dict = {"comic_path": comic_path, "render_revision": 1}
+    if panel_paths is not None:
+        extra["panel_paths"] = panel_paths
+    if seed is not None:
+        extra["seed"] = seed
     return transition(
         scenario_id,
         from_status="approved",
         to_status="rendered",
-        extra_fields={"comic_path": comic_path},
+        extra_fields=extra,
     )
+
+
+def update_in_place(scenario_id: str, status: str, extra_fields: dict) -> Optional[dict]:
+    """Atomically update a scenario without changing its lifecycle queue."""
+    if status not in VALID_STATES:
+        raise ValueError(f"Invalid status: {status!r}")
+    path = scenarios_dir(status) / f"{scenario_id}.json"
+    if not path.exists():
+        logger.error(f"Scenario {scenario_id} not found in {status}")
+        return None
+    scenario = json.loads(path.read_text(encoding="utf-8"))
+    if scenario.get("status") != status:
+        logger.error(f"Scenario {scenario_id} status mismatch in {status}")
+        return None
+    scenario.update(extra_fields)
+    _atomic_write(path, scenario)
+    logger.info(f"Updated {scenario_id} in place ({status})")
+    return scenario
 
 
 def mark_published(scenario_id: str, published_url: Optional[str] = None) -> Optional[dict]:

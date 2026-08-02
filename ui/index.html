@@ -100,11 +100,11 @@
           <li><b>Комиксы</b> — 🖼️ все выпуски</li>
         </ul>
 
-        <h3>✏️ Редактирование сценария</h3>
+        <h3>💬 Запрос на правку</h3>
         <ol>
-          <li>На карточке сценария нажми <b>✏️ Редактировать</b></li>
-          <li>Введи текст правки или выбери пример</li>
-          <li>Нажми <b>Сохранить</b></li>
+          <li>На карточке сценария нажми <b>💬 Запросить правку</b></li>
+          <li>Введи пожелания или выбери пример</li>
+          <li>Нажми <b>Сохранить запрос</b></li>
         </ol>
         <p><b>Примеры правок:</b></p>
         <ul>
@@ -114,13 +114,22 @@
           <li><i>Изменить концовку</i></li>
           <li><i>Добавить персонажа</i></li>
         </ul>
-        <p>На карточке отображается badge <b>💬 N правок</b> — количество сохранённых правок.</p>
+        <p>Badge <b>💬 N запросов</b> показывает сохранённую историю. На этом этапе запрос фиксируется, но ещё не запускает LLM-регенерацию.</p>
+
+        <h3>🔐 Доступ</h3>
+        <ul>
+          <li>По умолчанию Web server доступен только на <code>127.0.0.1</code></li>
+          <li>Remote mode требует API token и разрешённый origin</li>
+          <li>Token хранится только до закрытия browser session</li>
+        </ul>
 
         <h3>🚀 Контент</h3>
         <ul>
           <li><b>✅ Утвердить</b> — перевести в статус «Утверждён»</li>
           <li><b>❌ Отклонить</b> — перевести в статус «Отклонён»</li>
-          <li><b>✏️ Редактировать</b> — добавить правку</li>
+          <li><b>💬 Запросить правку</b> — сохранить revision request для следующего этапа</li>
+          <li><b>🔄 Re-render</b> — атомарно заменить только rendered comic</li>
+          <li><b>Published</b> — read-only; изменение потребует нового remix draft</li>
         </ul>
 
         <h3>💡 Подсказки</h3>
@@ -149,9 +158,9 @@
   <!-- Edit Modal -->
   <div id="edit-modal" class="modal hidden">
     <div class="modal-content">
-      <h3>✏️ Редактирование сценария</h3>
+      <h3>💬 Запрос на правку</h3>
       <p>ID: <code id="edit-id"></code></p>
-      <textarea id="edit-text" placeholder="Опишите правки..."></textarea>
+      <textarea id="edit-text" placeholder="Опишите желаемые изменения..."></textarea>
       <div class="examples">
         <small>Примеры правок:</small>
         <div id="examples-list">
@@ -164,7 +173,7 @@
       </div>
       <div class="modal-actions">
         <button id="edit-cancel">Отмена</button>
-        <button id="edit-save">Сохранить</button>
+        <button id="edit-save">Сохранить запрос</button>
       </div>
     </div>
   </div>
