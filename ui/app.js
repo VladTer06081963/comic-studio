@@ -263,14 +263,18 @@ function attachHandlers(status) {
             body: JSON.stringify({ mode: status === 'rendered' ? 'rerender' : 'initial' }),
           });
           const data = await res.json();
-          if (data.ok) {
+          if (res.ok && data.ok) {
             btn.textContent = '🎨 Рендер запущен';
             setTimeout(() => loadTab(status), 1000);
+          } else if (res.status === 409) {
+            btn.textContent = 'Уже в процессе';
           } else {
             btn.textContent = 'Ошибка';
+            console.error('Render error:', data.error);
           }
         } catch (err) {
           btn.textContent = 'Ошибка';
+          console.error('Render fetch error:', err);
         }
       });
     });
