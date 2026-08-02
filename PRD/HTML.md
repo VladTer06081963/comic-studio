@@ -503,15 +503,30 @@ data/comics/<id>/
 
 ---
 
-## 9. Open Questions
+## 9. Open Questions (решены 2026-08-02)
 
-1. **OQ-1.** Нужна ли **видео-анимация** появления баблов? (CSS animation при загрузке — да; видео-комикс — отдельный change.)
-2. **OQ-2.** Должны ли мы **прятать мусорный текст** на панелях через CSS-фильтры (blur/mix-blend-mode)? Или достаточно баблов поверх?
-3. **OQ-3.** Один layout.json на сценарий или на каждый render (revision)? (Скорее на render — у каждого render своя история.)
-4. **OQ-4.** Шрифты в `py/render/html_renderer/static/fonts/` — это **часть репозитория** (тогда +2-5 MB) или **загружаются** при первом запуске? (Скорее часть репо для автономности.)
-5. **OQ-5.** Поддержка **Notion comic mirror** для HTML? Сейчас Notion получает PNG.
-6. **OQ-6.** Префикс путей в HTML: относительные (`./fonts/Bangers.woff2`) или абсолютные (`/comics/<id>/fonts/Bangers.woff2`)? (Скорее относительные для автономности.)
-7. **OQ-7.** Должны ли шрифты быть **Google Fonts CDN** (с fallback на локальный) или **только локальный**? (Скорее только локальный, чтобы не зависеть от CDN.)
+Все OQ решены до старта OpenSpec change `comic-html-rendering`.
+
+1. **OQ-1. ✅ Анимации баблов — ДА, лёгкая CSS.**
+   `@keyframes bubble-pop { scale 0.8 → 1.0, opacity 0 → 1, 200ms ease-out, animation-delay 0..N*80ms per panel }`. Видео-комикс — отдельный future change.
+
+2. **OQ-2. ❌ Backdrop-blur мусора — НЕТ в MVP.**
+   Сейчас баблов в углу достаточно для маскировки мусорного текста MiniMax. `backdrop-filter: blur()` и `mix-blend-mode` — future enhancement, не блокер.
+
+3. **OQ-3. ✅ layout.json — на render.**
+   `data/comics/<id>/layout.json` хранит манифест **конкретного render_revision**. У каждого rerender свой layout.json. Это согласуется с тем, что `panel_paths`, `comic_path` в scenario указывают на последний render.
+
+4. **OQ-4. ✅ Шрифты — в репо, без LFS.**
+   `py/render/html_renderer/static/fonts/*.woff2` коммитятся напрямую. ~500KB для 6 шрифтов. Без `git lfs` — все могут клонировать без дополнительной настройки. README с лицензиями шрифтов (Open Font License) в той же папке.
+
+5. **OQ-5. ❌ Notion HTML mirror — НЕТ в MVP.**
+   `py/lib/notion_sync.sync_comic` остаётся PNG-only placeholder. HTML-mirror = future change (Notion API поддерживает `embed` с URL).
+
+6. **OQ-6. ✅ Относительные пути в HTML.**
+   `href="./fonts/Bangers.woff2"`, `src="./panel_1.png"`. HTML можно запаковать в `.zip` и расшарить автономно. При deploy за reverse-proxy с подпутьми — настраивать через `<base href>` или rewrite rules на уровне reverse-proxy, **не** в самом HTML.
+
+7. **OQ-7. ✅ Только локальные шрифты.**
+   `py/render/html_renderer/static/fonts/*.woff2` + `@font-face { src: url('./fonts/Bangers.woff2') format('woff2'); }`. Без зависимости от `fonts.googleapis.com`. CDN можно добавить позже как оптимизацию, если станет нужна CDN-кеш-стратегия.
 
 ---
 
@@ -572,3 +587,5 @@ data/comics/<id>/
 ## История изменений
 
 - `2026-08-02T21:30:00+03:00` — v0.1, initial draft. Описаны problem statement, goals, non-goals, personas, user stories, solution overview, FR, NFR, architecture, open questions, rollout plan, verification.
+- `2026-08-02T21:45:00+03:00` — v0.2, OQ-1..OQ-7 решены: CSS-animations да, blur мусора нет, layout.json на render, шрифты в репо без LFS, Notion HTML mirror нет в MVP, относительные пути, только локальные шрифты. Готов к OpenSpec change.
+- `2026-08-02T22:00:00+03:00` — v0.3, OpenSpec change `comic-html-rendering` создан и валиден (`openspec validate --strict` ✓). Артефакты: proposal.md, design.md, tasks.md (50 задач в 9 секциях), 3 новых capability specs (`web-comic-rendering`, `python-comic-rendering`, `web-comic-rendering-pipeline`), 2 обновлённых (`web-scenario-operations`, `web-process-jobs`). Подготовлен `HANDOFF_HTML_RENDERING.md` для следующей сессии с архитектурой, decisions, планом по фазам, тестовой инфраструктурой и red lines (что НЕ делать). Реализация — в следующей сессии.

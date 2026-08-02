@@ -11,19 +11,19 @@
 | 2 | Зафиксировать выбор **варианта B** (PNG-preview + HTML-артефакт) | ✅ |
 | 3 | Создать аудит `summary/audit/012_comic-html-rendering.md` | ✅ |
 | 4 | Создать tasks `summary/tasks/012_comic-html-rendering.md` | ✅ |
-| 5 | Обсудить **Open Questions** (OQ-1..OQ-7) из `PRD/HTML.md` §9 с владельцем | ⏳ |
-| 6 | Дописать `PRD/HTML.md` до v0.2 после обсуждения OQ | ⏳ |
-| 7 | Создать OpenSpec change `comic-html-rendering` (proposal, design, specs, tasks) | ⏳ |
-| 8 | Реализация Phase 1: `py/render/html_renderer/` пакет + jinja2-шаблон + базовый CSS + 6 шрифтов | ⏳ |
-| 9 | Реализация Phase 1: обновить `assemble_comic` чтобы генерил и HTML, и PNG-preview | ⏳ |
-| 10 | Реализация Phase 1: 1-2 теста (HTML валиден, inline CSS присутствует, PNG-preview не сломан) | ⏳ |
-| 11 | Реализация Phase 2: `GET /comics/<id>.html` endpoint | ⏳ |
-| 12 | Реализация Phase 2: `GET /comics/<id>/static/comic.css` + `/fonts/<name>.woff2` | ⏳ |
-| 13 | Реализация Phase 2: Content Negotiation для `GET /comics/<id>` (HTML if Accept, else PNG) | ⏳ |
+| 5 | Обсудить **Open Questions** (OQ-1..OQ-7) из `PRD/HTML.md` §9 с владельцем | ✅ |
+| 6 | Дописать `PRD/HTML.md` до v0.2 после обсуждения OQ | ✅ |
+| 7 | Создать OpenSpec change `comic-html-rendering` (proposal, design, specs, tasks) | ✅ |
+| 8 | Подготовить `HANDOFF_HTML_RENDERING.md` для следующей сессии | ✅ |
+| 9 | Реализация Phase 1: `py/render/html_renderer/` пакет + jinja2-шаблон + базовый CSS + 6 шрифтов | ⏳ |
+| 10 | Реализация Phase 1: обновить `assemble_comic` чтобы генерил и HTML, и PNG-preview | ⏳ |
+| 11 | Реализация Phase 1: 1-2 теста (HTML валиден, inline CSS присутствует, PNG-preview не сломан) | ⏳ |
+| 12 | Реализация Phase 2: `GET /comics/<id>.html` endpoint | ⏳ |
+| 13 | Реализация Phase 2: `GET /comics/<id>/fonts/<name>.woff2` static | ⏳ |
 | 14 | Реализация Phase 3: Telegram caption с HTML-ссылкой (URL из `WEB_PUBLIC_URL` env) | ⏳ |
 | 15 | Реализация Phase 3: Telegraf `Markup.button.url` inline-кнопка | ⏳ |
-| 16 | Реализация Phase 3: обновить `docs/api.md`, `docs/workflow.md`, `ALGORITM.md` | ⏳ |
-| 17 | Реализация Phase 3: фиксация `comic-html-rendering` change (аудит, таски, CHANGELOG, git) | ⏳ |
+| 16 | Реализация Phase 3: обновить `docs/api.md`, `docs/workflow.md`, `ALGORITM.md`, `CLAUDE.md`, `README.md` | ⏳ |
+| 17 | Реализация Phase 4: фиксация `comic-html-rendering` change (аудит, таски, CHANGELOG, git, archive) | ⏳ |
 
 ## Артефакты (пока)
 

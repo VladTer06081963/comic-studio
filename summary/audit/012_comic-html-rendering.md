@@ -124,5 +124,5 @@ layout type.
 
 ## 9. Статус
 
-✅ Design foundation зафиксирован — 2026-08-02.
-OpenSpec change ещё не создан — design phase, требует обсуждения Open Questions.
+✅ Design foundation + OpenSpec change зафиксированы — 2026-08-02.
+OpenSpec change `comic-html-rendering` создан и валиден (`openspec validate --strict` ✓). Все 7 OQ решены, 5 specs (3 new + 2 modified) готовы. `HANDOFF_HTML_RENDERING.md` подготовлен для следующей сессии. Реализация — в следующей сессии.
