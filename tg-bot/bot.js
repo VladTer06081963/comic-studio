@@ -316,7 +316,20 @@ bot.command('help', async (ctx) => {
     `<b>💡 Подсказки:</b>\n` +
     `• Нажми <b>✨ Создать комикс</b> в меню — и просто опиши идею\n` +
     `• Подписи в комиксах — <b>только на русском языке</b>\n` +
-    `• Правки сохраняются как история — можно дополнять`;
+    `• Правки сохраняются как история — можно дополнять\n\n` +
+    `<b>🎨 Restyle (быстрая смена стиля баблов):</b>\n` +
+    `• <code>/restyle ID bubble|star|gothic|boom|memo|bar</code>\n` +
+    `• Меняет ТОЛЬКО стиль баблов (CSS/Pillow-overlay), панели НЕ перегенерируются\n` +
+    `• Занимает 2-5 сек, 0 вызовов MiniMax, статус сценария не меняется\n` +
+    `• Доступно для <code>rendered</code> и <code>published</code>\n\n` +
+    `<b>📁 HTML комикс и его редактирование:</b>\n` +
+    `• Артефакты: <code>data/comics/&lt;ID&gt;.html</code> + <code>data/comics/&lt;ID&gt;/{panel_*.png,layout.json,fonts/}</code>\n` +
+    `• Открыть: <code>open data/comics/&lt;ID&gt;.html</code> или Web UI <code>http://127.0.0.1:3000/comics/&lt;ID&gt;.html</code>\n` +
+    `• HTML self-contained: inline-CSS, относительные пути <code>./&lt;ID&gt;/fonts/</code> и <code>./&lt;ID&gt;/panel_*.png</code>\n` +
+    `• <b>Ручная правка текста:</b> открой .html в редакторе, найди <code>&lt;p&gt;...&lt;/p&gt;</code> внутри баблов — меняй текст\n` +
+    `• <b>Смена класса бабла:</b> найди <code>class="bubble bubble--bubble ..."</code>, замени <code>bubble</code> на <code>gothic|star|boom|memo|bar</code>\n` +
+    `• <b>Смена позиции:</b> второй класс — <code>bubble--top-right|top-left|bottom-right|bottom-left</code>\n` +
+    `• ⚠️ Ручные правки перезаписываются при <b>rerender</b>. Используй <code>/restyle</code> для стиля (сохраняет панели)`;
   await ctx.reply(helpText, { parse_mode: 'HTML', ...getMainMenu() });
 });
 
@@ -1059,7 +1072,15 @@ bot.on('text', async (ctx) => {
       `<b>💡 Подсказки:</b>\n` +
       `• Нажми <b>✨ Создать комикс</b> и опиши идею!\n` +
       `• Подписи в комиксах — <b>только на русском языке</b>\n` +
-      `• Правки сохраняются как история`;
+      `• Правки сохраняются как история\n\n` +
+      `<b>📁 HTML комикс:</b>\n` +
+      `• После рендера создаётся <code>data/comics/&lt;ID&gt;.html</code> — автономная HTML-страница\n` +
+      `• Открой в браузере: <code>open data/comics/&lt;ID&gt;.html</code> или через Web UI: <code>http://127.0.0.1:3000/comics/&lt;ID&gt;.html</code>\n` +
+      `• <b>Редактирование:</b> HTML self-contained (inline CSS + локальные woff2 + относительные пути к панелям в <code>./&lt;ID&gt;/</code>)\n` +
+      `  • Открой <code>.html</code> в текстовом редакторе — captions в тегах <code>&lt;p&gt;</code>, можно менять текст/порядок\n` +
+      `  • Чтобы переключить стиль баблов на всех панелях: <code>/restyle ID gothic</code> (быстро, 2-5 сек)\n` +
+      `  • Чтобы сменить <i>один</i> бабл на другой класс — найди <code>class="bubble bubble--bubble ..."</code> в HTML и замени <code>bubble</code> на <code>gothic|star|boom|memo|bar</code>\n` +
+      `• ⚠️ После следующего <b>rerender</b> HTML переписывается — ручные правки теряются. Используй <code>/restyle</code> для стиля, <code>/edit</code> для правки сюжета (с re-approval)`;
     return ctx.reply(helpText, { parse_mode: 'HTML', ...getMainMenu() });
   }
 
