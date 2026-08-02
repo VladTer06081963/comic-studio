@@ -158,8 +158,7 @@ function getScenarioButtons(sc, status) {
     ]);
   } else if (status === 'published') {
     buttons.push([
-      Markup.button.callback('🎨 Remix', `remix:${sc.id}`),
-      Markup.button.callback('🎨 Повторить рендер', `render:${sc.id}`),
+      Markup.button.callback('🎨 Remix', `remix:${sc.id}`)
     ]);
   }
   buttons.push([Markup.button.callback('🗑 Удалить', `confirm_delete:${sc.id}`)]);
@@ -800,7 +799,13 @@ bot.action(/^rerender_random:(.+)$/, async (ctx) => {
   // Trigger render
   await ctx.reply(`🎲 Новый seed: <code>${newSeed}</code>\n🎨 Запускаю рендер...`, { parse_mode: 'HTML' });
 
-  const cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
+  let cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
+  if (found && found.status === 'rendered') {
+    cmd += ` --rerender --staging-dir data/.staging/bot_seed_${id}_${Date.now()}`;
+  } else if (!found || found.status !== 'approved') {
+    return ctx.reply(`❌ <b>Нельзя отрендерить сценарий в статусе <code>${found ? found.status : 'unknown'}</code>.</b>`, { parse_mode: 'HTML' });
+  }
+
   execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 })
     .then(() => {
       const updated = findScenario(id);
@@ -830,14 +835,17 @@ bot.action(/^render:(.+)$/, async (ctx) => {
   const found = findScenario(id);
   if (!found) return ctx.answerCbQuery('Сценарий не найден');
 
-  if (found.status !== 'approved') {
-    return ctx.answerCbQuery('❌ Сценарий должен быть утвержден (approved) для рендеринга', { show_alert: true });
+  if (!['approved', 'rendered'].includes(found.status)) {
+    return ctx.answerCbQuery('❌ Сценарий должен быть в статусе approved или rendered', { show_alert: true });
   }
 
   ctx.answerCbQuery('🎨 Запускаю рендер...');
   const progressMsg = await ctx.reply(`🎨 <b>Запущен рендер комикса <code>${id}</code>...</b>\n\n⏳ Генерируем изображения панелей через MiniMax AI и собираем итоговый стрип. Это может занять около 1-2 минут.`, { parse_mode: 'HTML' });
 
-  const cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
+  let cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
+  if (found.status === 'rendered') {
+    cmd += ` --rerender --staging-dir data/.staging/bot_render_${id}_${Date.now()}`;
+  }
   try {
     const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
     try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
