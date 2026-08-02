@@ -1041,6 +1041,25 @@ export { bot, userState, CHAT_ID };
 
 // Launch Bot
 if (import.meta.url === `file://${process.argv[1]}`) {
+  const commands = [
+    { command: 'start', description: 'Запустить бота и показать главное меню' },
+    { command: 'create', description: 'Создать новый комикс (передайте идею или URL)' },
+    { command: 'pending', description: 'Черновики на утверждение (draft)' },
+    { command: 'approved', description: 'Готовы к рендеру (approved)' },
+    { command: 'rendered', description: 'Отрендеренные (готовы к публикации)' },
+    { command: 'published', description: 'Опубликованные комиксы' },
+    { command: 'rejected', description: 'Отклоненные сценарии' },
+    { command: 'all', description: 'Все сценарии' },
+    { command: 'stats', description: 'Статистика по базе' },
+    { command: 'help', description: 'Справка и список команд' },
+    { command: 'view', description: 'Посмотреть сценарий по ID' },
+    { command: 'edit', description: 'Редактировать сценарий по ID' }
+  ];
+
+  bot.telegram.setMyCommands(commands).catch(err => {
+    console.error('Не удалось установить меню команд Telegram:', err);
+  });
+
   bot.launch().then(() => {
     console.log(`🤖 Telegram bot запущен в обновлённом режиме. Chat ID: ${CHAT_ID}`);
   }).catch(err => {
