@@ -88,6 +88,7 @@ def _generate_candidate(
         output_path=final_path,
         style=scenario.get("style", "star"),
         layout=scenario.get("layout", "comic"),
+        scenario=scenario,  # включает генерацию layout.json и <id>.html (variant B)
     )
     _verify_png(final)
     return final, panel_paths

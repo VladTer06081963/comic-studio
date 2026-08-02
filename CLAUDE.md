@@ -11,6 +11,10 @@
 3. **Идемпотентность.** Использовать scenario ID и seed; для `rendered` допускается только explicit staging rerender.
 4. **Revision и remix — единственный путь обновления.** `approved|rendered` редактируется через `POST /api/scenarios/:id/revise` (LLM-регенерация с atomic revoke). `published` редактируется через `POST /api/scenarios/:id/remix` (новый draft с `remix_of`).
 5. **Published immutable.** Не изменять, не удалять и не рендерить повторно `published`; будущие изменения создают новый remix draft.
+6. **HTML — primary artifact, PNG — preview fallback.** С версии `comic-html-rendering` (`openspec/specs/web-comic-rendering`) комикс рендерится в HTML+PNG. `data/comics/<id>.html` — основной артефакт для браузера и шеринга; `data/comics/<id>.png` сохраняется для backward-compat с Telegram, Notion, archive, social. Оба генерируются в `assemble_comic()` при передаче `scenario=...`. Без `scenario` — только PNG (legacy).
+7. **Шрифты для HTML лежат в репо, не через CDN.** `py/render/html_renderer/static/fonts/*.woff2` коммитятся напрямую (OFL-лицензия, ~120 KB всего). `render_html` копирует их рядом с `<id>.html` для автономности. Не добавлять `git lfs`, не подключать `fonts.googleapis.com` / `fonts.gstatic.com`.
+8. **Telegram caption ссылается на HTML, если задан `WEB_PUBLIC_URL`.** Когда env-переменная установлена, Telegram-бот добавляет в caption `🔗 HTML: <WEB_PUBLIC_URL>/comics/<id>.html` и inline-кнопку `[🔗 Открыть HTML](url)`. Без переменной — backward-compat (только фото, без ссылки).
+9. **Безопасность HTML.** `render_html` использует jinja2 autoescape глобально (`autoescape=True`). Не передавать raw HTML в captions/titles/ids — только plain text, эскейп через jinja2.
 6. **Логировать всё.** Python и Web пишут в `data/logs/YYYY-MM-DD.log` и stdout без секретов. Revision и remix эмитят `revision.requested`, `revision.succeeded`, `revision.failed`, `remix.created` с `request_id`, `scenario_id` и `revision_request_id`.
 7. **Тесты без платных side effects.** Mocked suites не должны вызывать MiniMax, публикацию или Telegram.
 

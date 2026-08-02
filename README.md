@@ -85,6 +85,23 @@ python scripts/render_approved.py --all
 
 Web API запускает render как durable job. Для `rendered` поддерживается только явный staging rerender. `published` через Web API не изменяется и не рендерится повторно.
 
+После успешной сборки генерируются **два артефакта** (variant B):
+- `data/comics/<id>.png` — PNG-preview (Pillow overlay с баблами, для backward-compat с Telegram/Notion/archive/social).
+- `data/comics/<id>.html` — HTML-страница с inline-CSS и woff2 шрифтами (primary artifact, для браузера и расшаривания).
+- `data/comics/<id>/layout.json` — манифест для HTML-рендера.
+- `data/comics/<id>/fonts/*.woff2` — локальные шрифты для автономности HTML.
+
+Открыть HTML в браузере:
+
+```bash
+open data/comics/abc12345.html    # macOS
+xdg-open data/comics/abc12345.html # Linux
+```
+
+Или через Web API: `GET http://127.0.0.1:3000/comics/abc12345.html`.
+
+Telegram caption для rendered/published сценариев получает ссылку на HTML и inline-кнопку, если задан env `WEB_PUBLIC_URL=https://studio.example.com`.
+
 ### Безопасный cron test
 
 ```bash

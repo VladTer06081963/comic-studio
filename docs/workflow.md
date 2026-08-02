@@ -96,7 +96,11 @@ GET /api/jobs/<job-id>
 
 ```text
 data/scenarios/rendered/<id>.json
-data/comics/<id>.png
+data/comics/<id>.png            # PNG-preview (Pillow overlay, backward-compat)
+data/comics/<id>.html           # HTML-страница (primary artifact, variant B)
+data/comics/<id>/layout.json    # манифест для HTML-рендера
+data/comics/<id>/fonts/         # woff2 шрифты для автономности HTML
+```
 data/comics/<id>/panel_*.png
 ```
 

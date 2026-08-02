@@ -1,0 +1,381 @@
+/* Comic Studio — Comic HTML Styles
+ *
+ * Inline-копируется в <style> блок jinja2-шаблона comic.html.j2.
+ * Inline-CSS (а не external stylesheet) даёт автономность HTML при расшаривании.
+ *
+ * Содержит:
+ *   • @font-face для 5 шрифтов (OFL): Bangers, Bangers-Bold, UnifrakturCook, Bungee, Caveat
+ *   • CSS-анимацию bubble-pop (OQ-1: scale 0.8→1.0, opacity 0→1, 200ms ease-out, delay per panel)
+ *   • 6 базовых стилей баблов (.bubble--bubble, --star, --gothic, --boom, --memo, --bar)
+ *   • Responsive layout (@media max-width:768px → vertical stack)
+ *   • Reset + body defaults (dark background, white panels)
+ */
+
+/* ── Reset & Base ───────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #0a0a0a;
+  color: #f4f4f4;
+  font-family: 'Bangers', system-ui, -apple-system, sans-serif;
+  line-height: 1.4;
+  min-height: 100vh;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px 64px;
+}
+
+main.comic {
+  width: 100%;
+  max-width: 1200px;
+  display: grid;
+  gap: 18px;
+}
+
+/* ── Layout variants ────────────────────────────────────────────────────────── */
+main.comic--comic {
+  /* Asymmetric grid: 1 large panel + smaller tiles below. Panels keep intrinsic order via grid-template-areas */
+  grid-template-columns: repeat(12, 1fr);
+  grid-auto-rows: minmax(0, auto);
+}
+
+main.comic--grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+main.comic--vertical {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ── Panels ────────────────────────────────────────────────────────────────── */
+.panel {
+  position: relative;
+  margin: 0;
+  background: #000;
+  border: 4px solid #000;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  /* Animation: fade-in panels on load */
+  animation: panel-in 320ms ease-out both;
+}
+
+main.comic--comic > .panel:nth-child(1) { grid-column: span 12; aspect-ratio: 16 / 9; }
+main.comic--comic > .panel:nth-child(2) { grid-column: span 7;  aspect-ratio: 4 / 3; }
+main.comic--comic > .panel:nth-child(3) { grid-column: span 5;  aspect-ratio: 4 / 3; }
+main.comic--comic > .panel:nth-child(4) { grid-column: span 12; aspect-ratio: 16 / 7; }
+
+main.comic--grid > .panel {
+  aspect-ratio: 4 / 3;
+}
+
+main.comic--vertical > .panel {
+  aspect-ratio: 16 / 9;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.panel img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 0;
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Bubble common ─────────────────────────────────────────────────────────── */
+.bubble {
+  position: absolute;
+  max-width: 62%;
+  padding: 14px 20px;
+  font-family: 'Bangers', cursive;
+  font-size: clamp(1rem, 1.8vw, 1.6rem);
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  color: #111;
+  background: #fff;
+  border: 3px solid #000;
+  border-radius: 22px;
+  filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.6));
+  z-index: 2;
+  animation: bubble-pop 220ms ease-out both;
+  /* Each panel gets a small staggered delay; first panel = 0 */
+  animation-delay: calc(var(--panel-index, 0) * 80ms);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.bubble p {
+  margin: 0;
+  padding: 0;
+}
+
+@keyframes bubble-pop {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1.0); }
+}
+
+/* ── Bubble positions (4 направления) ──────────────────────────────────────── */
+.bubble--bottom-left  { left: 4%;  bottom: 6%; }
+.bubble--bottom-right { right: 4%; bottom: 6%; }
+.bubble--top-left     { left: 4%;  top: 6%; }
+.bubble--top-right    { right: 4%; top: 6%; }
+
+/* Tail (хвостик) — общий для bubble/memo через ::after */
+.bubble--bubble::after,
+.bubble--memo::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 18px solid transparent;
+  border-bottom-color: #fff;
+  filter: drop-shadow(0 -2px 0 #000);
+}
+
+.bubble--bubble::after,
+.bubble--memo::after {
+  /* Tail points down-and-inward for bottom-* positions, up-and-inward for top-* */
+}
+
+.bubble--bottom-left::after  { left: 14%;  bottom: -34px; transform: rotate(180deg); }
+.bubble--bottom-right::after { right: 14%; bottom: -34px; transform: rotate(180deg); }
+.bubble--top-left::after     { left: 14%;  top: -34px; }
+.bubble--top-right::after    { right: 14%; top: -34px; }
+
+/* ── Bubble: white speech bubble ───────────────────────────────────────────── */
+.bubble--bubble {
+  background: #fff;
+  color: #111;
+  border-color: #000;
+}
+
+/* ── Star: gold starburst ──────────────────────────────────────────────────── */
+.bubble--star {
+  background: #ffdc00;
+  color: #141414;
+  border-color: #000;
+  border-radius: 0;
+  font-weight: 700;
+  clip-path: polygon(
+    50% 0%, 61% 27%, 88% 12%, 76% 38%, 100% 50%, 76% 62%, 88% 88%,
+    61% 73%, 50% 100%, 39% 73%, 12% 88%, 24% 62%, 0% 50%, 24% 38%, 12% 12%, 39% 27%
+  );
+  padding: 28px 32px;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* Hide ::after tail for star (shape is the bubble) */
+.bubble--star::after { display: none; }
+
+/* ── Gothic: black gothic banner with gold trim ────────────────────────────── */
+.bubble--gothic {
+  background: #0f0f0f;
+  color: #ebc85a;
+  border-color: #d4af37;
+  border-width: 3px;
+  font-family: 'UnifrakturCook', 'Times New Roman', serif;
+  font-size: clamp(1.1rem, 2vw, 1.8rem);
+  text-shadow: 1px 1px 0 #000, 0 0 4px rgba(212, 175, 55, 0.45);
+  border-radius: 4px;
+  padding: 18px 36px;
+}
+
+.bubble--gothic::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(212, 175, 55, 0.7);
+  pointer-events: none;
+}
+
+.bubble--gothic::after { display: none; }
+
+/* ── Boom: red/orange explosion burst ──────────────────────────────────────── */
+.bubble--boom {
+  background: linear-gradient(135deg, #ff7818 0%, #b41e1e 100%);
+  color: #fff03c;
+  border-color: #1a1a1a;
+  font-family: 'Bungee', 'Impact', sans-serif;
+  text-transform: uppercase;
+  font-size: clamp(1.2rem, 2.4vw, 2rem);
+  text-shadow: 2px 2px 0 #1a1a1a, -1px -1px 0 #1a1a1a;
+  border-radius: 0;
+  clip-path: polygon(
+    50% 0%, 60% 18%, 82% 6%, 78% 30%, 100% 32%, 88% 52%, 100% 70%, 76% 74%,
+    84% 96%, 60% 82%, 50% 100%, 40% 82%, 16% 96%, 24% 74%, 0% 70%, 12% 52%,
+    0% 32%, 22% 30%, 18% 6%, 40% 18%
+  );
+  padding: 28px 32px;
+  animation: bubble-pop 220ms ease-out both, boom-shake 0.45s ease-in-out 220ms 2;
+}
+
+.bubble--boom::after { display: none; }
+
+@keyframes boom-shake {
+  0%, 100% { transform: rotate(0deg) scale(1.0); }
+  25%      { transform: rotate(-2deg) scale(1.02); }
+  75%      { transform: rotate(2deg) scale(1.02); }
+}
+
+/* ── Memo: yellow Post-It with rotation ────────────────────────────────────── */
+.bubble--memo {
+  background: #fff078;
+  color: #2a2a2a;
+  border-color: #785c00;
+  font-family: 'Caveat', 'Comic Sans MS', cursive;
+  font-size: clamp(1.1rem, 2vw, 1.8rem);
+  transform: rotate(-2deg);
+  border-radius: 4px;
+  padding: 16px 22px;
+}
+
+.bubble--memo::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 48px;
+  height: 14px;
+  margin-left: -24px;
+  background: rgba(180, 180, 180, 0.85);
+  border: 1px solid rgba(80, 80, 80, 0.6);
+  border-radius: 2px;
+}
+
+/* ── Bar: full-width caption strip below panel ─────────────────────────────── */
+.bubble--bar {
+  /* `bar` is rendered as full-width below the panel image (positioning handled in template) */
+  position: relative;
+  max-width: 100%;
+  margin: 0;
+  background: #0a0a0a;
+  color: #ffd700;
+  border: none;
+  border-top: 3px solid #ffd700;
+  border-radius: 0;
+  font-family: 'Bangers', cursive;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 14px 24px;
+  font-size: clamp(1.1rem, 1.6vw, 1.4rem);
+  filter: none;
+}
+
+.bubble--bar::after { display: none; }
+
+/* ── Responsive: mobile vertical stack ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  body { padding: 12px 8px 48px; }
+
+  main.comic,
+  main.comic--comic,
+  main.comic--grid,
+  main.comic--vertical {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  main.comic--comic > .panel,
+  main.comic--grid > .panel,
+  main.comic--vertical > .panel {
+    grid-column: span 1;
+    aspect-ratio: 16 / 10;
+  }
+
+  .bubble {
+    max-width: 80%;
+    font-size: clamp(1rem, 4.5vw, 1.4rem);
+    padding: 10px 14px;
+  }
+}
+
+/* ── Reduced motion: respect user preference ──────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .bubble,
+  .panel,
+  .bubble--boom {
+    animation: none !important;
+  }
+}
+
+/* ── Title block ───────────────────────────────────────────────────────────── */
+.comic-header {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto 18px;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.comic-header h1 {
+  margin: 0 0 6px;
+  font-family: 'Bangers', cursive;
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffd700;
+}
+
+.comic-header .meta {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+}
+
+/* ── @font-face declarations ───────────────────────────────────────────────── */
+/* Inline as data URIs would inflate HTML massively (>500KB) — we use relative paths
+ * to ./fonts/<name>.woff2 instead, copied by render_html next to the HTML. */
+@font-face {
+  font-family: 'Bangers';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Bangers.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Bangers';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/Bangers-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'UnifrakturCook';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/UnifrakturCook.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Bungee';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Bungee.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Caveat.woff2') format('woff2');
+}

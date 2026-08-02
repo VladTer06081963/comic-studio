@@ -20,6 +20,25 @@ export function isLoopbackHost(host) {
   return normalized === '127.0.0.1' || normalized === '::1' || normalized === 'localhost';
 }
 
+function parseWebPublicUrl(raw) {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return '';
+  // Только http(s) без путей/query/fragment — мы строим ссылки вручную
+  let url;
+  try { url = new URL(trimmed); } catch {
+    const err = new Error('Invalid WEB_PUBLIC_URL: expected http(s) URL like https://studio.example.com');
+    err.code = 'INVALID_CONFIGURATION';
+    throw err;
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    const err = new Error('Invalid WEB_PUBLIC_URL: must use http or https scheme');
+    err.code = 'INVALID_CONFIGURATION';
+    throw err;
+  }
+  // trailing slash убираем — ссылки собираем как `${base}/comics/<id>.html`
+  return url.origin;
+}
+
 function parseOrigins(raw) {
   if (!raw) return [];
   const values = raw.split(',').map(v => v.trim()).filter(Boolean);
@@ -61,6 +80,10 @@ export function loadConfig(env = process.env, overrides = {}) {
     allowedOrigins: Object.freeze([...allowedOrigins]),
     apiToken,
     remoteMode,
+    // Публичный URL Web UI (используется Telegram-ботом для HTML-ссылок в caption).
+    // Default '' — backward-compat: Telegram показывает только PNG-фото, без ссылки.
+    // Должен быть валидным http(s) URL с трейлинг-слешем, или пустой строкой.
+    webPublicUrl: parseWebPublicUrl(overrides.webPublicUrl ?? env.WEB_PUBLIC_URL),
     bodyLimit: overrides.bodyLimit || env.WEB_BODY_LIMIT || '128kb',
     maxContentChars: overrides.maxContentChars ?? intValue(env, 'WEB_MAX_CONTENT_CHARS', 50_000, { min: 1, max: 1_000_000 }),
     maxFeedbackChars: overrides.maxFeedbackChars ?? intValue(env, 'WEB_MAX_FEEDBACK_CHARS', 5_000, { min: 1, max: 100_000 }),

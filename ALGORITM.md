@@ -29,7 +29,10 @@
                 Pillow comic assembly
                              ▼
             data/scenarios/rendered/<id>.json
-            data/comics/<id>.png + panel files
+            data/comics/<id>.png         # PNG-preview (Pillow overlay, backward-compat)
+            data/comics/<id>.html        # HTML-страница (primary, variant B)
+            data/comics/<id>/layout.json # манифест для HTML-рендера
+            data/comics/<id>/fonts/      # woff2 шрифты для автономности HTML
                              ▼
               deployment publication adapter
                              ▼

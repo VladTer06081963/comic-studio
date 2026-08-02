@@ -20,6 +20,10 @@ const COMICS_DIR = path.join(DATA_DIR, 'comics');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '1045621572';
+// Optional: публичный URL Web UI для HTML-ссылок в Telegram-сообщениях
+// (см. spec `web-comic-rendering-pipeline` → Telegram caption). Default '' —
+// backward-compat: Telegram-бот работает как раньше (только фото, без ссылки).
+const WEB_PUBLIC_URL = String(process.env.WEB_PUBLIC_URL || '').trim().replace(/\/+$/, '');
 
 if (!BOT_TOKEN) {
   console.error('❌ TELEGRAM_BOT_TOKEN not set in .env');
@@ -222,11 +226,18 @@ async function sendScenarioView(ctx, sc, status) {
   const comicPath = sc.comic_path || path.join(COMICS_DIR, `${sc.id}.png`);
   if ((status === 'rendered' || status === 'published') && fs.existsSync(comicPath)) {
     try {
-      await ctx.replyWithPhoto({ source: comicPath }, {
-        caption: cardText,
-        parse_mode: 'HTML',
-        ...keyboard
-      });
+      // Если задан WEB_PUBLIC_URL — добавляем HTML-ссылку и inline-кнопку (variant B).
+      // Без WEB_PUBLIC_URL — backward-compat: caption и кнопки как раньше.
+      const photoOpts = { caption: cardText, parse_mode: 'HTML', ...keyboard };
+      if (WEB_PUBLIC_URL) {
+        const htmlUrl = `${WEB_PUBLIC_URL}/comics/${sc.id}.html`;
+        photoOpts.caption = `${cardText}\n\n🔗 <a href="${escapeHtml(htmlUrl)}">HTML-версия</a>`;
+        const htmlButton = Markup.button.url('🔗 Открыть HTML', htmlUrl);
+        // Append HTML-кнопку к существующим inline-кнопкам
+        const existing = keyboard.reply_markup?.inline_keyboard || [];
+        photoOpts.reply_markup = { inline_keyboard: [...existing, [htmlButton]] };
+      }
+      await ctx.replyWithPhoto({ source: comicPath }, photoOpts);
       return;
     } catch (e) {
       console.warn(`Failed to send photo for ${sc.id}:`, e.message);

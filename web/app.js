@@ -9,6 +9,7 @@ import { scenariosRouter } from './routes/scenarios.js';
 import { jobsRouter } from './routes/jobs.js';
 import { comicsRouter } from './routes/comics.js';
 import { healthRouter } from './routes/health.js';
+import { htmlStaticRouter } from './lib/html_static.js';
 
 export function createApp(runtime, { idGenerator } = {}) {
   const { config, logger, store, lifecycle, runner, jobStore, jobManager } = runtime;
@@ -26,6 +27,7 @@ export function createApp(runtime, { idGenerator } = {}) {
   app.use(express.json({ limit: config.bodyLimit }));
 
   app.use('/ui', express.static(config.uiRoot, { fallthrough: true, index: 'index.html' }));
+  app.use(htmlStaticRouter({ config }));
   app.get('/comics/:filename', (req, res, next) => {
     try {
       const match = /^([A-Za-z0-9_-]{4,64})\.png$/.exec(req.params.filename);

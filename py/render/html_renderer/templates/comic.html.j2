@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>{{ title }}{% if comic_id %} — {{ comic_id }}{% endif %}</title>
+  <style>
+/* comic.css — inlined at render time by html_renderer.render_html */
+{{ css }}
+  </style>
+</head>
+<body>
+  <header class="comic-header">
+    <h1>{{ title }}</h1>
+    <div class="meta">
+      <span>{{ layout|capitalize }} layout</span>
+      {% if tone %} · <span>tone: {{ tone }}</span>{% endif %}
+      {% if image_style %} · <span>style: {{ image_style }}</span>{% endif %}
+    </div>
+  </header>
+
+  <main class="comic comic--{{ layout }}" data-comic-id="{{ comic_id }}">
+    {% for panel in panels %}
+    <figure class="panel" style="--panel-index: {{ loop.index0 }};">
+      <img src="./{{ panel.image }}" alt="panel {{ panel.n }}{% if panel.caption %} — {{ panel.caption }}{% endif %}" loading="lazy">
+      {% if panel.caption and panel.bubble_style != 'none' and panel.bubble_style != 'bar' %}
+      <div class="bubble bubble--{{ panel.bubble_style }} bubble--{{ panel.bubble_position }}">
+        <p>{{ panel.caption }}</p>
+      </div>
+      {% endif %}
+    </figure>
+    {% if panel.bubble_style == 'bar' and panel.caption %}
+    <div class="bubble bubble--bar">
+      <p>{{ panel.caption }}</p>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </main>
+
+  <footer class="comic-header" aria-hidden="true">
+    <div class="meta">Comic Studio · {{ comic_id }}</div>
+  </footer>
+</body>
+</html>

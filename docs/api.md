@@ -312,3 +312,62 @@ npm test
 ```
 
 Tests use temporary data roots and mocked child processes. MiniMax, Telegram, Notion, site and social credentials are not required.
+
+## HTML comic rendering
+
+Комикс рендерится как автономная HTML-страница с inline-CSS и локальными woff2 шрифтами (variant B — primary artifact). PNG-preview сохраняется для backward-compat (Telegram, Notion, archive, social).
+
+### `GET /comics/<id>.html`
+
+Отдаёт HTML-страницу комикса.
+
+| Status | Когда |
+|--------|-------|
+| 200    | `data/comics/<id>.html` существует, `<id>` ∈ `^[A-Za-z0-9_-]{4,64}$` |
+| 400 `INVALID_SCENARIO_ID` | `<id>` вне regex (короткий, спец-символы) |
+| 404 `HTML_NOT_GENERATED`  | Сценарий ещё не отрендерен / HTML не создан |
+
+Response headers:
+
+```http
+Content-Type: text/html; charset=utf-8
+Cache-Control: public, max-age=60
+```
+
+HTML self-contained: inline-CSS, относительные пути к шрифтам (`./fonts/<name>.woff2`) и панелям (`./panel_*.png`). Можно запаковать в `.zip` и расшарить автономно.
+
+### `GET /comics/<id>/fonts/<name>.woff2`
+
+Отдаёт woff2-файл шрифта для автономности HTML.
+
+| Status | Когда |
+|--------|-------|
+| 200    | `data/comics/<id>/fonts/<name>.woff2` существует |
+| 400 `INVALID_FONT_NAME`  | Имя файла вне regex `^[A-Za-z0-9_-]{1,64}\.woff2$` |
+| 400 `INVALID_PATH`       | Path traversal попытка (`..`, encoded `%2e%2e`) |
+| 404 `FONT_NOT_FOUND`     | Файл отсутствует |
+
+Response headers:
+
+```http
+Content-Type: font/woff2
+Cache-Control: public, max-age=3600, immutable
+```
+
+### `GET /comics/<id>.png`
+
+PNG-preview (legacy, backward-compat). Без изменений.
+
+### Конфигурация `WEB_PUBLIC_URL`
+
+Env-переменная для Telegram-бота: публичный URL Web UI. Используется для добавления HTML-ссылки и inline-кнопки в caption для rendered/published сценариев.
+
+```env
+# Default empty: Telegram показывает только PNG-фото (backward-compat)
+# WEB_PUBLIC_URL=https://studio.example.com
+```
+
+Когда задан, Telegram caption дополняется строкой `🔗 HTML: <WEB_PUBLIC_URL>/comics/<id>.html` и inline-кнопкой `[🔗 Открыть HTML](url)`.
+
+Только http(s), без путей/query/fragment. Trailing slash убирается автоматически.
+
