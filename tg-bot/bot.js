@@ -496,6 +496,66 @@ bot.command('edit', async (ctx) => {
   await ctx.reply(`📝 Правка сохранена для <code>${escapeHtml(id)}</code>!`, { parse_mode: 'HTML' });
 });
 
+// /restyle <id> <style> — change bubble style (bubble|star|gothic|boom|memo|bar)
+// без вызова MiniMax. Быстро и дёшево, регенерирует PNG+HTML используя существующие панели.
+const VALID_RESTYLE_STYLES = ['bubble', 'star', 'gothic', 'boom', 'memo', 'bar'];
+bot.command('restyle', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const parts = ctx.message.text.trim().split(/\s+/);
+  const id = parts[1];
+  const style = parts[2];
+  if (!id || !style) {
+    return ctx.reply(
+      'Использование: <code>/restyle &lt;ID&gt; &lt;style&gt;</code>\n\n' +
+      'Стили: <code>bubble</code>, <code>star</code>, <code>gothic</code>, <code>boom</code>, <code>memo</code>, <code>bar</code>\n\n' +
+      'Меняет только стиль баблов, панели НЕ перегенерируются.',
+      { parse_mode: 'HTML' }
+    );
+  }
+  if (!VALID_RESTYLE_STYLES.includes(style)) {
+    return ctx.reply(
+      `❌ Неизвестный стиль: <code>${escapeHtml(style)}</code>\n\nДопустимые: ${VALID_RESTYLE_STYLES.map(s => `<code>${s}</code>`).join(', ')}`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const found = findScenario(id);
+  if (!found) return ctx.reply(`❌ Сценарий <code>${escapeHtml(id)}</code> не найден.`, { parse_mode: 'HTML' });
+  if (!['rendered', 'published'].includes(found.status)) {
+    return ctx.reply(
+      `❌ Сценарий в статусе <code>${found.status}</code>. /restyle работает только для <code>rendered</code> или <code>published</code>.`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const oldStyle = found.scenario.style || 'bubble';
+  if (oldStyle === style) {
+    return ctx.reply(`ℹ️ Стиль уже <code>${escapeHtml(style)}</code>.`, { parse_mode: 'HTML' });
+  }
+
+  const progressMsg = await ctx.reply(
+    `🎨 <b>Restyle <code>${escapeHtml(id)}</code>: ${escapeHtml(oldStyle)} → ${escapeHtml(style)}</b>\n\n` +
+    `⏳ Регенерирую PNG+HTML+layout.json (без вызова MiniMax)...`,
+    { parse_mode: 'HTML' }
+  );
+
+  try {
+    const cmd = `${VENV_PYTHON} scripts/restyle.py --scenario-id ${id} --style ${style}`;
+    await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
+    try { await ctx.deleteMessage(progressMsg.message_id); } catch (e) {}
+    const htmlUrl = `${WEB_PUBLIC_URL || 'http://127.0.0.1:3000'}/comics/${id}.html`;
+    await ctx.reply(
+      `🎉 <b>Restyle завершён!</b>\n\n` +
+      `<code>${escapeHtml(oldStyle)}</code> → <code>${escapeHtml(style)}</code>\n\n` +
+      `🔗 <a href="${escapeHtml(htmlUrl)}">Открыть HTML</a>`,
+      { parse_mode: 'HTML', disable_web_page_preview: true }
+    );
+  } catch (err) {
+    try { await ctx.deleteMessage(progressMsg.message_id); } catch (e) {}
+    await ctx.reply(`❌ <b>Ошибка restyle:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
+  }
+});
+
 // ── Ingest & Generation Pipeline Helper ────────────────────────────────────────
 async function processCreateComic(ctx, input) {
   const statusMsg = await ctx.reply(`⏳ <b>Генерация сценария...</b>\nАнализирую источник и генерирую кадры с MiniMax LLM...`, { parse_mode: 'HTML' });
@@ -982,6 +1042,7 @@ bot.on('text', async (ctx) => {
       `• Кнопка ✏️ Редактировать — меню правок (фидбек, смена seed, рендер)\n` +
       `• <code>/edit ID текст правки</code>\n` +
       `• Несколько правок сохраняются как история (ремиксы)\n` +
+      `• <b>Restyle</b> (быстро): <code>/restyle ID bubble|star|gothic|boom|memo|bar</code> — меняет только стиль баблов без ре-рендера панелей\n` +
       `\n<b>Примеры правок:</b>\n` +
       `• <code>Убрать панель 2</code>\n` +
       `• <code>Сделать более смешным</code>\n` +
@@ -1114,7 +1175,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     { command: 'stats', description: 'Статистика по базе' },
     { command: 'help', description: 'Справка и список команд' },
     { command: 'view', description: 'Посмотреть сценарий по ID' },
-    { command: 'edit', description: 'Редактировать сценарий по ID' }
+    { command: 'edit', description: 'Редактировать сценарий по ID' },
+    { command: 'restyle', description: 'Сменить стиль баблов без ре-рендера: /restyle ID bubble|star|gothic|boom|memo|bar' }
   ];
 
   bot.telegram.setMyCommands(commands).catch(err => {
