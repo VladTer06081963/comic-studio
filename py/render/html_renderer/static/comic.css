@@ -345,7 +345,8 @@ main.comic--vertical > .panel {
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('./fonts/Bangers.woff2') format('woff2');
+  /* Path is rewritten by html_renderer.render_html to embed comic_id */
+  src: url('__FONT_BANGERS_SRC__') format('woff2');
 }
 
 @font-face {
@@ -353,7 +354,7 @@ main.comic--vertical > .panel {
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('./fonts/Bangers-Bold.woff2') format('woff2');
+  src: url('__FONT_BANGERS_BOLD_SRC__') format('woff2');
 }
 
 @font-face {
@@ -361,7 +362,7 @@ main.comic--vertical > .panel {
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('./fonts/UnifrakturCook.woff2') format('woff2');
+  src: url('__FONT_UNIFRAKTURCOOK_SRC__') format('woff2');
 }
 
 @font-face {
@@ -369,7 +370,7 @@ main.comic--vertical > .panel {
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('./fonts/Bungee.woff2') format('woff2');
+  src: url('__FONT_BUNGEE_SRC__') format('woff2');
 }
 
 @font-face {
@@ -377,5 +378,5 @@ main.comic--vertical > .panel {
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('./fonts/Caveat.woff2') format('woff2');
+  src: url('__FONT_CAVEAT_SRC__') format('woff2');
 }

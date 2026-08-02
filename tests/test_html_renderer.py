@@ -198,18 +198,20 @@ class RenderHtmlTests(unittest.TestCase):
         out = self.tmp_path / "test001.html"
         render_html(_build_layout_dict(), out)
         html = out.read_text(encoding="utf-8")
-        # relative panel paths
-        self.assertIn('src="./panel_1.png"', html)
-        self.assertIn('src="./panel_2.png"', html)
+        # relative panel paths (use comic_id prefix because panels live in <id>/ subdir)
+        self.assertIn('src="./test001/panel_1.png"', html)
+        self.assertIn('src="./test001/panel_2.png"', html)
         # relative font paths (in @font-face src)
-        self.assertIn("./fonts/Bangers.woff2", html)
-        self.assertIn("./fonts/Caveat.woff2", html)
+        self.assertIn("./test001/fonts/Bangers.woff2", html)
+        self.assertIn("./test001/fonts/Caveat.woff2", html)
 
     def test_copies_fonts_to_output_dir(self):
         out = self.tmp_path / "test001.html"
         render_html(_build_layout_dict(), out)
-        fonts_dir = self.tmp_path / "fonts"
-        self.assertTrue(fonts_dir.is_dir())
+        # Fonts копируются в `<out_dir>/<id>/fonts/` (sibling of panels),
+        # чтобы HTML + <id>/ можно было запаковать в .zip автономно.
+        fonts_dir = self.tmp_path / "test001" / "fonts"
+        self.assertTrue(fonts_dir.is_dir(), f"fonts dir not found at {fonts_dir}")
         fonts = sorted(p.name for p in fonts_dir.glob("*.woff2"))
         self.assertGreaterEqual(len(fonts), 5)
         self.assertIn("Bangers.woff2", fonts)

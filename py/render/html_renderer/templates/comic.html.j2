@@ -23,7 +23,7 @@
   <main class="comic comic--{{ layout }}" data-comic-id="{{ comic_id }}">
     {% for panel in panels %}
     <figure class="panel" style="--panel-index: {{ loop.index0 }};">
-      <img src="./{{ panel.image }}" alt="panel {{ panel.n }}{% if panel.caption %} — {{ panel.caption }}{% endif %}" loading="lazy">
+      <img src="./{{ comic_id }}/{{ panel.image }}" alt="panel {{ panel.n }}{% if panel.caption %} — {{ panel.caption }}{% endif %}" loading="lazy">
       {% if panel.caption and panel.bubble_style != 'none' and panel.bubble_style != 'bar' %}
       <div class="bubble bubble--{{ panel.bubble_style }} bubble--{{ panel.bubble_position }}">
         <p>{{ panel.caption }}</p>

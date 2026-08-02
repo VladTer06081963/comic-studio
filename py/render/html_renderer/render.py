@@ -44,8 +44,14 @@ def _load_css() -> str:
     return CSS_PATH.read_text(encoding="utf-8")
 
 
-def _copy_fonts(target_dir: Path) -> list[Path]:
+def _copy_fonts(target_dir: Path, comic_id: str | None = None) -> list[Path]:
     """Копирует woff2-шрифты из `static/fonts/` в `<target_dir>/fonts/`.
+
+    Если передан `comic_id`, шрифты копируются в `<target_dir>/<comic_id>/fonts/`
+    (рядом с панелями — для структуры `data/comics/<id>/{panels,fonts}/`,
+    HTML в `data/comics/<id>.html` ссылается на `./<id>/fonts/*.woff2`).
+    Это даёт полную самодостаточность: `<id>.html` + `<id>/` директорию можно
+    запаковать в `.zip` и расшарить без потери шрифтов.
 
     Returns:
         список скопированных файлов.
@@ -55,7 +61,10 @@ def _copy_fonts(target_dir: Path) -> list[Path]:
     """
     if not FONTS_DIR.exists():
         raise FileNotFoundError(f"fonts directory not found at {FONTS_DIR}")
-    target_fonts = target_dir / "fonts"
+    if comic_id:
+        target_fonts = target_dir / comic_id / "fonts"
+    else:
+        target_fonts = target_dir / "fonts"
     target_fonts.mkdir(parents=True, exist_ok=True)
     copied: list[Path] = []
     for font_file in sorted(FONTS_DIR.glob("*.woff2")):
@@ -79,7 +88,7 @@ def render_html(
             Должен проходить `validate_layout()`.
         output_path: путь к выходному HTML-файлу (например, `data/comics/<id>.html`).
         css_text: опциональный override для inline-CSS (по умолчанию — содержимое
-            `py/render/html_renderer/static/comic.css`).
+            `py/render/html_renderer/static/comic.css` с подставленными путями шрифтов).
         copy_fonts: копировать ли woff2 шрифты рядом с HTML (default True).
 
     Returns:
@@ -94,7 +103,21 @@ def render_html(
     out_path = Path(output_path).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    css = css_text if css_text is not None else _load_css()
+    # Шрифты лежат в `<out_dir>/<comic_id>/fonts/` (sibling of panels),
+    # поэтому CSS-пути относительно HTML (который в `<out_dir>/<id>.html`)
+    # должны быть `./<id>/fonts/<name>.woff2`. Подставляем в inline-CSS.
+    comic_id = layout.get("id", "")
+    if css_text is None:
+        css = _load_css()
+        css = (
+            css.replace("__FONT_BANGERS_SRC__", f"./{comic_id}/fonts/Bangers.woff2")
+               .replace("__FONT_BANGERS_BOLD_SRC__", f"./{comic_id}/fonts/Bangers-Bold.woff2")
+               .replace("__FONT_UNIFRAKTURCOOK_SRC__", f"./{comic_id}/fonts/UnifrakturCook.woff2")
+               .replace("__FONT_BUNGEE_SRC__", f"./{comic_id}/fonts/Bungee.woff2")
+               .replace("__FONT_CAVEAT_SRC__", f"./{comic_id}/fonts/Caveat.woff2")
+        )
+    else:
+        css = css_text
 
     # Готовим контекст для шаблона: обязательные поля плюс опциональные.
     template = _JINJA_ENV.get_template(TEMPLATE_PATH.name)
@@ -115,7 +138,7 @@ def render_html(
 
     fonts_copied: list[Path] = []
     if copy_fonts:
-        fonts_copied = _copy_fonts(out_path.parent)
+        fonts_copied = _copy_fonts(out_path.parent, comic_id=layout.get("id"))
 
     logger.info(
         f"Rendered HTML → {out_path} ({len(html)} bytes, {len(panels)} panels, "

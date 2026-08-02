@@ -29,6 +29,13 @@ function writeFont(dataRoot, id, name = 'Bangers.woff2', content = Buffer.from('
   return { fontsDir, content };
 }
 
+function writePanel(dataRoot, id, name = 'panel_1.png', content = Buffer.from([0x89, 0x50, 0x4E, 0x47])) {
+  const panelPath = path.join(dataRoot, 'comics', id, name);
+  fs.mkdirSync(path.dirname(panelPath), { recursive: true });
+  fs.writeFileSync(panelPath, content);
+  return panelPath;
+}
+
 async function rawFetch(url, options) {
   // fetch, но без парсинга JSON — нужно для проверки content-type
   const response = await fetch(url, options);
@@ -173,16 +180,53 @@ test('HTML body uses relative paths for fonts and panels', async () => {
   // Create a more representative HTML with relative paths
   const html = `<!doctype html>
 <html><head><style>
-@font-face { src: url('./fonts/Bangers.woff2') format('woff2'); }
+@font-face { src: url('./html-rel/fonts/Bangers.woff2') format('woff2'); }
 </style></head><body>
-<img src="./panel_1.png" alt="panel 1">
+<img src="./html-rel/panel_1.png" alt="panel 1">
 </body></html>`;
   writeHtml(ctx.project.dataRoot, 'html-rel', html);
   const server = await listen(ctx.app);
   try {
     const response = await rawFetch(`${server.baseUrl}/comics/html-rel.html`);
     const body = await response.text();
-    assert.match(body, /\.\/fonts\/Bangers\.woff2/);
-    assert.match(body, /src="\.\/panel_1\.png"/);
+    assert.match(body, /\.\/html-rel\/fonts\/Bangers\.woff2/);
+    assert.match(body, /src="\.\/html-rel\/panel_1\.png"/);
+  } finally { await server.close(); ctx.project.cleanup(); }
+});
+
+test('GET /comics/<id>/panels/<name> returns 200 image/png', async () => {
+  const ctx = makeTestRuntime();
+  writeHtml(ctx.project.dataRoot, 'panel-0001');
+  writePanel(ctx.project.dataRoot, 'panel-0001', 'panel_1.png');
+  writePanel(ctx.project.dataRoot, 'panel-0001', 'panel_2.png');
+  const server = await listen(ctx.app);
+  try {
+    const response = await rawFetch(`${server.baseUrl}/comics/panel-0001/panels/panel_1.png`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+  } finally { await server.close(); ctx.project.cleanup(); }
+});
+
+test('GET /comics/<id>/panels/nonexistent.png returns 404', async () => {
+  const ctx = makeTestRuntime();
+  writeHtml(ctx.project.dataRoot, 'panel-0002');
+  // Valid name format but file doesn't exist
+  const server = await listen(ctx.app);
+  try {
+    const result = await jsonFetch(`${server.baseUrl}/comics/panel-0002/panels/panel_99.png`);
+    assert.equal(result.response.status, 404);
+    assert.equal(result.body.error.code, 'PANEL_NOT_FOUND');
+  } finally { await server.close(); ctx.project.cleanup(); }
+});
+
+test('GET /comics/<id>/panels rejects invalid names (path traversal)', async () => {
+  const ctx = makeTestRuntime();
+  writeHtml(ctx.project.dataRoot, 'panel-0003');
+  writePanel(ctx.project.dataRoot, 'panel-0003', 'panel_1.png');
+  const server = await listen(ctx.app);
+  try {
+    // path traversal in panel name → reject
+    const response = await rawFetch(`${server.baseUrl}/comics/panel-0003/panels/..%2F..%2Fetc%2Fpasswd.png`);
+    assert.notEqual(response.status, 200);
   } finally { await server.close(); ctx.project.cleanup(); }
 });

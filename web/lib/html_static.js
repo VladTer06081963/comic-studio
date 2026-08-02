@@ -56,6 +56,35 @@ export function htmlStaticRouter({ config }) {
     return res.sendFile(path.resolve(filePath));
   }));
 
+  // ── GET /comics/:id/panels/:name ───────────────────────────────────────────
+  // Панели лежат в `data/comics/<id>/panel_N.png` (поддиректория рядом с <id>.html).
+  // HTML ссылается на `./<id>/panel_*.png` — этот endpoint отдаёт файлы.
+  const PANEL_RE = /^panel_[1-9][0-9]?\.png$/;
+  router.get('/comics/:id/panels/:name', asyncRoute(async (req, res, next) => {
+    let id;
+    try {
+      id = scenarioId(req.params.id);
+    } catch (err) {
+      return next(err);
+    }
+    const name = req.params.name;
+    if (!PANEL_RE.test(name)) {
+      return next(badRequest('INVALID_PANEL_NAME', 'Panel file name must match panel_[1-9][0-9]?.png'));
+    }
+    let filePath;
+    try {
+      filePath = safeResolve(config.dataRoot, 'comics', id, name);
+    } catch (err) {
+      return next(err);
+    }
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      return next(notFound('PANEL_NOT_FOUND', `Panel file ${name} not found`));
+    }
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600, immutable');
+    return res.sendFile(path.resolve(filePath));
+  }));
+
   // ── GET /comics/:id/fonts/:name ────────────────────────────────────────────
   router.get('/comics/:id/fonts/:name', asyncRoute(async (req, res, next) => {
     let id;
