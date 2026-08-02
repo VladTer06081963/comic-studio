@@ -8,6 +8,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,7 +18,7 @@ from py.lib.config import comics_dir, data_dir, scenarios_dir
 from py.lib.lifecycle import mark_rendered, update_in_place, validate_approved
 from py.lib.logging_setup import setup
 from py.render.comic_assembler import assemble_comic
-from py.render.minimax_client import generate_image
+from py.render.minimax_client import encode_image_b64, generate_image
 
 logger = setup("scripts.render_approved")
 
@@ -55,7 +56,7 @@ def _generate_candidate(
     panel_root.mkdir(parents=True, exist_ok=True)
     final_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def render_panel(panel: dict) -> tuple[int, Path]:
+    def render_panel(panel: dict, reference_b64: Optional[str] = None) -> tuple[int, Path]:
         panel_path = panel_root / f"panel_{panel['n']}.png"
         if mode == "initial" and panel_path.exists():
             _verify_png(panel_path)
@@ -68,17 +69,44 @@ def _generate_candidate(
             output_path=panel_path,
             aspect_ratio=scenario.get("aspect_ratio", "16:9"),
             seed=seed,
+            subject_reference_b64=reference_b64,
         )
         _verify_png(panel_path)
         return panel["n"], panel_path
 
-    with ThreadPoolExecutor(max_workers=min(4, len(panels))) as executor:
-        futures = [executor.submit(render_panel, panel) for panel in panels]
-        for future in as_completed(futures):
-            number, _ = future.result()
-            logger.info(f"Panel {number} rendered")
+    # Character consistency: первая панель генерируется без reference,
+    # затем используется как subject_reference для остальных панелей.
+    # Это держит персонажа консистентным через всю историю.
+    panel_paths_ordered: list[Optional[Path]] = [None] * len(panels)
 
-    panel_paths = [panel_root / f"panel_{panel['n']}.png" for panel in panels]
+    if not panels:
+        raise ValueError(f"{sid}: no panels to render")
+
+    # 1) Генерируем panel #1 последовательно (без reference — это «якорь» персонажа)
+    first_panel = panels[0]
+    first_path = panel_root / f"panel_{first_panel['n']}.png"
+    n, p = render_panel(first_panel, reference_b64=None)
+    panel_paths_ordered[0] = p
+    logger.info(f"Panel {n} rendered (anchor for character reference)")
+
+    # Кодируем первую панель в base64 для передачи в subject_reference
+    reference_b64 = encode_image_b64(first_path) if first_path.exists() else None
+
+    # 2) Остальные панели — параллельно с reference на panel #1
+    if len(panels) > 1:
+        remaining = panels[1:]
+        with ThreadPoolExecutor(max_workers=min(4, len(remaining))) as executor:
+            futures = {
+                executor.submit(render_panel, p, reference_b64): idx + 1
+                for idx, p in enumerate(remaining)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                number, path = future.result()
+                panel_paths_ordered[idx] = path
+                logger.info(f"Panel {number} rendered (with character reference)")
+
+    panel_paths = [panel_paths_ordered[i] for i in range(len(panels))]
     for panel_path in panel_paths:
         _verify_png(panel_path)
     captions = [panel["caption"] for panel in panels]
