@@ -106,7 +106,14 @@ function escapeHtml(text) {
 function formatScenarioCard(sc, status) {
   const badge = STATUS_BADGES[status] || status;
   const panels = (sc.panels || [])
-    .map(p => `  <b>${p.n}.</b> <i>"${escapeHtml(p.caption)}"</i>`)
+    .map(p => {
+      let line = `  <b>${p.n}.</b> <i>"${escapeHtml(p.caption)}"</i>`;
+      if (p.prompt) {
+        const preview = p.prompt.length > 60 ? p.prompt.substring(0, 57) + '...' : p.prompt;
+        line += `\n      🎨 <span class="tg-spoiler"><code>${escapeHtml(preview)}</code></span>`;
+      }
+      return line;
+    })
     .join('\n');
 
   let sourceStr = escapeHtml(sc.source || 'свободный ввод');
