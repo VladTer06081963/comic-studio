@@ -124,16 +124,16 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
     result = img.copy().convert("RGB")
     draw  = ImageDraw.Draw(result)
     W, H  = result.size
-    font  = find_font(26)
+    font  = find_font(40)
 
-    lines = _wrap(text, max_chars=14)
+    lines = _wrap(text, max_chars=10)
     tw, th, sizes = _measure_multiline(font, lines)
 
-    pad    = 18
-    tail_h = 28
+    pad    = 28
+    tail_h = 40
     bw     = tw + pad * 2
     bh     = th + pad * 2
-    margin = 22
+    margin = 28
 
     # Bubble center
     if "left" in pos:
@@ -148,10 +148,10 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
     bx, by = cx - bw // 2, cy - bh // 2
 
     if style == "bubble":
-        rad = min(bh // 2, 30)
+        rad = min(bh // 2, 44)
         draw.rounded_rectangle(
             [bx, by, bx + bw, by + bh],
-            radius=rad, fill="white", outline="black", width=3,
+            radius=rad, fill="white", outline="black", width=4,
         )
         # Tail pointing toward the action (inward)
         if "bottom" in pos:
@@ -169,10 +169,10 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
             ty += lh + 5
 
     elif style == "star":
-        r_out = max(bw, bh) // 2 + 26
+        r_out = max(bw, bh) // 2 + 38
         r_in  = int(r_out * 0.44)
         pts   = _starburst_pts(cx, cy, r_out, r_in, 12)
-        draw.polygon(pts, fill=(255, 220, 0), outline=(0, 0, 0), width=3)
+        draw.polygon(pts, fill=(255, 220, 0), outline=(0, 0, 0), width=4)
         ty = cy - th // 2
         for line, (lw, lh) in zip(lines, sizes):
             # Shadow + text
@@ -183,33 +183,33 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
     elif style == "gothic":
         # Black gothic banner with gold trim, white drop-shadow, serif font.
         # Wider/taller than text + ornate ribbon edges.
-        wing = 14  # tab width on each side
-        gx0, gy0 = bx - wing, by - 6
-        gx1, gy1 = bx + bw + wing, by + bh + 6
+        wing = 22  # tab width on each side
+        gx0, gy0 = bx - wing, by - 8
+        gx1, gy1 = bx + bw + wing, by + bh + 8
         # Body
         draw.rectangle([gx0, gy0, gx1, gy1], fill=(15, 15, 15))
         # Gold inner trim
-        draw.rectangle([gx0 + 2, gy0 + 2, gx1 - 2, gy1 - 2],
-                       outline=(212, 175, 55), width=2)
+        draw.rectangle([gx0 + 3, gy0 + 3, gx1 - 3, gy1 - 3],
+                       outline=(212, 175, 55), width=3)
         # Ribbon ends (notched like a banner)
-        notch = 12
+        notch = 18
         draw.polygon([(gx0, gy0), (gx0 + notch, gy0 + (gy1 - gy0) // 2),
                       (gx0, gy1)], fill=(15, 15, 15))
         draw.polygon([(gx1, gy0), (gx1 - notch, gy0 + (gy1 - gy0) // 2),
                       (gx1, gy1)], fill=(15, 15, 15))
         # Gold outline on notches
         draw.line([(gx0, gy0), (gx0 + notch, gy0 + (gy1 - gy0) // 2),
-                   (gx0, gy1)], fill=(212, 175, 55), width=2)
+                   (gx0, gy1)], fill=(212, 175, 55), width=3)
         draw.line([(gx1, gy0), (gx1 - notch, gy0 + (gy1 - gy0) // 2),
-                   (gx1, gy1)], fill=(212, 175, 55), width=2)
+                   (gx1, gy1)], fill=(212, 175, 55), width=3)
         # Decorative top + bottom dividers
-        div_y0 = gy0 + 4
-        div_y1 = gy1 - 4
-        draw.line([(gx0 + 6, div_y0), (gx1 - 6, div_y0)], fill=(120, 90, 20), width=1)
-        draw.line([(gx0 + 6, div_y1), (gx1 - 6, div_y1)], fill=(120, 90, 20), width=1)
+        div_y0 = gy0 + 6
+        div_y1 = gy1 - 6
+        draw.line([(gx0 + 8, div_y0), (gx1 - 8, div_y0)], fill=(120, 90, 20), width=2)
+        draw.line([(gx0 + 8, div_y1), (gx1 - 8, div_y1)], fill=(120, 90, 20), width=2)
         # Text — gold serif with dark shadow
-        gothic_font = _find_serif_font(26)
-        g_lines     = _wrap(text, max_chars=14)
+        gothic_font = _find_serif_font(40)
+        g_lines     = _wrap(text, max_chars=10)
         g_tw, g_th, g_sizes = _measure_multiline(gothic_font, g_lines)
         ty = cy - g_th // 2
         for line, (lw, lh) in zip(g_lines, g_sizes):
@@ -222,7 +222,7 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
     elif style == "boom":
         # Big chunky red/orange explosion with yellow italic text.
         # Two layered starbursts give it a hot "heat" feel.
-        r_out = max(bw, bh) // 2 + 34
+        r_out = max(bw, bh) // 2 + 50
         r_in  = int(r_out * 0.42)
         # Outer red burst
         pts   = _starburst_pts(cx, cy, r_out, r_in, 14)
@@ -236,10 +236,10 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
             a = math.pi * i / 14 - math.pi / 2 + offset_angle
             r = r_out2 if i % 2 == 0 else r_in2
             pts2.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-        draw.polygon(pts2, fill=(255, 120, 30), outline=(80, 20, 0), width=3)
+        draw.polygon(pts2, fill=(255, 120, 30), outline=(80, 20, 0), width=4)
         # Text — bold yellow with red shadow
-        boom_font = find_font(30)
-        boom_lines = _wrap(text, max_chars=12)
+        boom_font = find_font(46)
+        boom_lines = _wrap(text, max_chars=10)
         b_tw, b_th, b_sizes = _measure_multiline(boom_font, boom_lines)
         ty = cy - b_th // 2
         for line, (lw, lh) in zip(boom_lines, b_sizes):
@@ -252,11 +252,11 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
     elif style == "memo":
         # Yellow Post-It with a folded corner and a tiny pin shadow.
         # Slight rotation per position so it doesn't look stamped.
-        fold = 22
-        shadow = 6
+        fold = 32
+        shadow = 10
         # Memo body — leave room for the folded corner top-right
-        mx0, my0 = bx, by - 2
-        mx1, my1 = bx + bw, by + bh + 2
+        mx0, my0 = bx, by - 4
+        mx1, my1 = bx + bw, by + bh + 4
         # Black drop-shadow
         draw.rectangle([mx0 + shadow, my0 + shadow, mx1 + shadow, my1 + shadow],
                        fill=(0, 0, 0))
@@ -265,14 +265,14 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
             (mx0, my0), (mx1 - fold, my0),
             (mx1, my0 + fold), (mx1, my1),
             (mx0, my1),
-        ], fill=(255, 240, 120), outline=(120, 90, 0), width=2)
+        ], fill=(255, 240, 120), outline=(120, 90, 0), width=3)
         # Folded corner triangle (slightly darker yellow)
         draw.polygon([
             (mx1 - fold, my0), (mx1 - fold, my0 + fold), (mx1, my0 + fold),
-        ], fill=(220, 200, 90), outline=(120, 90, 0), width=2)
+        ], fill=(220, 200, 90), outline=(120, 90, 0), width=3)
         # Slight hand-written feel — shift lines slightly
-        memo_font = find_font(26)
-        memo_lines = _wrap(text, max_chars=14)
+        memo_font = find_font(40)
+        memo_lines = _wrap(text, max_chars=10)
         m_tw, m_th, m_sizes = _measure_multiline(memo_font, memo_lines)
         ty = cy - m_th // 2
         for i, (line, (lw, lh)) in enumerate(zip(memo_lines, m_sizes)):
@@ -281,11 +281,11 @@ def draw_caption_overlay(img: Image.Image, text: str, style: str, pos: str) -> I
                       fill=(40, 40, 40), font=memo_font)
             ty += lh + 5
         # Tiny pin/tape decoration on top edge
-        pin_w, pin_h = 28, 8
+        pin_w, pin_h = 40, 12
         pin_x = cx - pin_w // 2
-        pin_y = my0 - 3
+        pin_y = my0 - 4
         draw.rectangle([pin_x, pin_y, pin_x + pin_w, pin_y + pin_h],
-                       fill=(180, 180, 180), outline=(80, 80, 80), width=1)
+                       fill=(180, 180, 180), outline=(80, 80, 80), width=2)
 
     return result
 
@@ -374,7 +374,7 @@ def assemble_grid(
         # (bubble/star/gothic/boom/memo) draw text on top of the image.
         if bubble_styles and any(s == "bar" for s in bubble_styles):
             has_text = bool(captions) and any(c.strip() for c in captions)
-            cap_h = 64 if has_text else 0
+            cap_h = 96 if has_text else 0
         canvas_h = rows * (ph + cap_h + b) + b
         slots = []
         for idx in range(n):
@@ -385,7 +385,7 @@ def assemble_grid(
             slots.append((x, y, pw, ph))
 
     comic    = Image.new("RGB", (canvas_w, canvas_h), BG_COLOR)
-    font_bar = find_font(34)
+    font_bar = find_font(52)
 
     for idx, img in enumerate(imgs):
         x, y, sw, sh = slots[idx]
@@ -411,11 +411,11 @@ def assemble_grid(
             # "bar" — gold caption strip below panel
             comic.paste(fitted, (x, y))
             if caption and layout == "grid":
-                bar  = Image.new("RGB", (sw, 64), BG_COLOR)
+                bar  = Image.new("RGB", (sw, 96), BG_COLOR)
                 drw  = ImageDraw.Draw(bar)
                 tw, th = _text_size(font_bar, caption.upper())
                 tx   = (sw - tw) // 2
-                ty   = (64  - th) // 2
+                ty   = (96  - th) // 2
                 drw.text((tx+2, ty+2), caption.upper(), fill=(0, 0, 0),     font=font_bar)
                 drw.text((tx,   ty),   caption.upper(), fill=(255, 215, 0), font=font_bar)
                 comic.paste(bar, (x, y + sh))
