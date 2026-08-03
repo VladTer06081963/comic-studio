@@ -1,0 +1,454 @@
+/* ui/aipult.css — AiPULT chat panel + CommandCard styles.
+   Reuses CSS variables from ui/style.css. Mobile-first. */
+
+:root {
+  /* Telegram theme variables (Phase 3 will read from window.Telegram.WebApp).
+     For now: defaults mirror existing palette. */
+  --tg-theme-bg-color: var(--bg);
+  --tg-theme-text-color: var(--text);
+  --tg-theme-hint-color: var(--muted);
+  --tg-theme-button-color: var(--accent);
+  --tg-theme-button-text-color: #ffffff;
+  --tg-theme-secondary-bg-color: var(--panel);
+}
+
+#tab-aipult {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 80px);
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.aipult-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.aipult-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.aipult-clear-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 1.1rem;
+  transition: all 0.2s;
+}
+.aipult-clear-btn:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.aipult-subtitle {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 1rem 0;
+}
+.aipult-subtitle b {
+  color: var(--accent2);
+}
+
+/* === Suggestions chips =================================================== */
+
+.aipult-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.aipult-suggestions small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-right: 0.25rem;
+}
+.aipult-chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  min-height: 44px;
+  transition: all 0.2s;
+}
+.aipult-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* === Messages ============================================================ */
+
+.aipult-messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.5rem 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 200px;
+}
+
+.aipult-bubble {
+  max-width: 80%;
+  padding: 0.6rem 0.9rem;
+  border-radius: 12px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+.aipult-bubble--user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--tg-theme-button-text-color);
+  border-bottom-right-radius: 4px;
+}
+.aipult-bubble--assistant {
+  align-self: flex-start;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+.aipult-bubble--system {
+  align-self: center;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+.aipult-bubble-meta {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+/* === CommandCard ========================================================= */
+
+.aipult-card {
+  align-self: stretch;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+.aipult-card-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+.aipult-card-subtitle {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0;
+}
+.aipult-card-scenario-line {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+.aipult-card-command {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--accent2);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.aipult-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.aipult-card-warnings {
+  background: rgba(239, 71, 111, 0.1);
+  border-left: 3px solid var(--red);
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: var(--red);
+}
+.aipult-card-warnings ul {
+  margin: 0.25rem 0 0 1rem;
+  padding: 0;
+}
+.aipult-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.aipult-card-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.5rem 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  min-height: 44px;
+  min-width: 44px;
+  transition: all 0.2s;
+}
+.aipult-card-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.aipult-card-btn--run {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--tg-theme-button-text-color);
+  font-weight: 600;
+}
+.aipult-card-btn--run:hover {
+  filter: brightness(1.1);
+}
+.aipult-card-btn--reject {
+  margin-left: auto;
+}
+.aipult-card-btn--reject:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+.aipult-card-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.aipult-card-edit-textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--text);
+  resize: vertical;
+  min-height: 80px;
+}
+.aipult-card-edit-status {
+  font-size: 0.8rem;
+  margin: 0;
+}
+.aipult-card-edit-status--ok { color: var(--green); }
+.aipult-card-edit-status--err { color: var(--red); }
+
+/* === Candidate list (disambiguation) ==================================== */
+
+.aipult-candidates {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.aipult-candidates-header {
+  font-size: 0.9rem;
+  color: var(--accent2);
+  margin: 0;
+}
+.aipult-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+  flex-wrap: wrap;
+}
+.aipult-candidate-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.aipult-candidate-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.aipult-candidate-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+
+/* === Result bubble (after Run) =========================================== */
+
+.aipult-result {
+  align-self: stretch;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--green);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+.aipult-result--failed { border-left-color: var(--red); }
+.aipult-result-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+}
+.aipult-result-stdout {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  margin: 0.5rem 0 0 0;
+}
+.aipult-result-stdout summary {
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+/* Primary CTA after successful execution: open HTML comic */
+.aipult-result-open {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+.aipult-result-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.95rem;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 44px;
+  transition: all 0.2s;
+}
+.aipult-result-open-btn:hover { border-color: var(--accent); }
+.aipult-result-open-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--tg-theme-button-text-color);
+  font-weight: 600;
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.aipult-result-open-btn--primary:hover { filter: brightness(1.1); }
+.aipult-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* === Input area ========================================================== */
+
+.aipult-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+}
+.aipult-input {
+  flex: 1 1 auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  resize: none;
+  font-family: inherit;
+  min-height: 44px;
+  max-height: 200px;
+}
+.aipult-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.aipult-send-btn {
+  background: var(--accent);
+  border: none;
+  color: var(--tg-theme-button-text-color);
+  border-radius: 8px;
+  padding: 0 1rem;
+  cursor: pointer;
+  font-size: 1.2rem;
+  min-width: 56px;
+  min-height: 44px;
+  font-weight: 600;
+}
+.aipult-send-btn:hover { filter: brightness(1.1); }
+.aipult-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* === Mobile responsive =================================================== */
+
+@media (max-width: 768px) {
+  #tab-aipult {
+    padding: 0.5rem;
+    height: calc(100vh - 100px);
+  }
+  .aipult-bubble { max-width: 90%; }
+  .aipult-header h2 { font-size: 1.2rem; }
+  .aipult-card-actions { gap: 0.35rem; }
+  .aipult-card-btn { font-size: 0.8rem; padding: 0.4rem 0.6rem; }
+}
+
+@media (max-width: 480px) {
+  .aipult-form { flex-wrap: wrap; }
+  .aipult-input { min-width: 0; flex-basis: 100%; }
+  .aipult-send-btn { flex: 1 1 auto; }
+}

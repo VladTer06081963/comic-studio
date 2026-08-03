@@ -80,13 +80,80 @@ def _load_all_scenarios() -> list[dict]:
     return out
 
 
+# === Natural-language phrase handling =========================================
+# Drop Russian/English stop words + intent verbs + common UI nouns so that
+# "поменяй стиль у Роза и Яша на star" reduces to "роза яша star" and
+# matches scenario titled "Роза и Яша". Tokens < 2 chars dropped.
+STOP_WORDS = frozenset({
+    # Russian stop words
+    "у", "на", "и", "в", "с", "по", "для", "это", "что", "как", "а", "но",
+    "или", "же", "бы", "ли", "не", "ни", "то", "он", "она", "они", "мы", "вы",
+    "я", "ты", "мне", "тебе", "ему", "ей", "нам", "вам", "их", "его", "ее",
+    "из", "от", "до", "за", "над", "под", "при", "без", "через", "между",
+    "тот", "этот", "такой", "какой", "весь", "все", "всё", "кто", "где",
+    "когда", "чтобы", "потому", "если", "только", "уже", "ещё", "еще", "так",
+    "там", "тут", "здесь", "там", "очень", "просто", "сейчас", "можно",
+    # English stop words
+    "the", "a", "an", "of", "to", "in", "on", "at", "for", "by", "with",
+    "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might",
+    "i", "you", "he", "she", "it", "we", "they", "my", "your", "his", "its",
+    "our", "their", "this", "that", "these", "those",
+    # Common UI/intent verbs (don't help matching)
+    "поменяй", "сделай", "измени", "удали", "добавь", "убери", "создай",
+    "покажи", "найди", "запусти", "открой", "закрой", "сделать", "поменять",
+    "изменить", "узнать", "посмотреть", "рендери", "нарисуй", "стиль",
+    "стиле", "стиля", "стильу", "комикс", "комикса", "комиксы", "комиксе",
+    "стиль", "цвет", "цвета", "картинку", "картинки", "файл", "файла",
+    "make", "change", "show", "find", "delete", "create", "render", "open",
+    "style", "color", "image", "file",
+})
+
+
+def _extract_keywords(phrase: str) -> list[str]:
+    """Drop stop words + intent verbs, keep meaningful tokens (≥2 chars)."""
+    tokens = re.findall(r"[а-яёa-z0-9]+", phrase.lower())
+    return [t for t in tokens if t not in STOP_WORDS and len(t) >= 2]
+
+
+def _best_score(needle: str, haystack: str) -> float:
+    """Best partial_ratio score over (whole, each keyword, each bigram) of needle.
+
+    Uses _extract_keywords to drop stop words + 1-char tokens before
+    per-token scoring — otherwise "the" matches "The Mysterious Glitch"
+    and "to" matches "story" with 100% (false positives).
+    """
+    if not haystack or not needle:
+        return 0.0
+    needle = needle.lower()
+    haystack = haystack.lower()
+    tokens = _extract_keywords(needle)
+    best = _partial_ratio(needle, haystack) if tokens else 0.0
+    for tok in tokens:
+        s = _partial_ratio(tok, haystack)
+        if s > best:
+            best = s
+    for i in range(len(tokens) - 1):
+        bigram = f"{tokens[i]} {tokens[i+1]}"
+        s = _partial_ratio(bigram, haystack)
+        if s > best:
+            best = s
+    return float(best)
+
+
 def _score(phrase: str, scenario: dict) -> tuple[float, str]:
-    """Возвращает (score, method) — max(title, context*0.7). 0-100 шкала."""
-    title_score = _partial_ratio(phrase.lower(), str(scenario.get("title", "")).lower())
-    context = str(scenario.get("context", ""))[:CONTEXT_PREVIEW_CHARS].lower()
-    context_score = (
-        _partial_ratio(phrase.lower(), context) * CONTEXT_WEIGHT if context else 0
-    )
+    """Возвращает (score, method) — max(title, context*0.7). 0-100 шкала.
+
+    Использует _best_score для natural-language queries:
+    пробует whole phrase, каждый token, каждую bigram, и берёт MAX.
+    Это позволяет "поменяй стиль у Роза и Яша на star" резолвить в "Роза и Яша".
+    """
+    title = str(scenario.get("title", ""))
+    context = str(scenario.get("context", ""))[:CONTEXT_PREVIEW_CHARS]
+
+    title_score = _best_score(phrase, title)
+    context_score = _best_score(phrase, context) * CONTEXT_WEIGHT if context else 0
+
     if title_score >= context_score:
         return float(title_score), "title_match"
     return float(context_score), "context_match"
@@ -131,10 +198,12 @@ def resolve_scenario(
 
     scenarios = scenarios if scenarios is not None else _load_all_scenarios()
 
-    # 1. Explicit ID short-circuit
-    if ID_RE.match(phrase):
+    # 1. Explicit ID short-circuit (also matches when ID is embedded in phrase,
+    #    e.g. "покажи сценарий 8eaa57cc" or "view 8eaa57cc please")
+    id_candidates = ID_RE.findall(phrase)
+    for candidate_id in id_candidates:
         for sc in scenarios:
-            if sc.get("id") == phrase:
+            if sc.get("id") == candidate_id:
                 return [{
                     "id": sc["id"],
                     "title": sc.get("title", ""),

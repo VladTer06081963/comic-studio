@@ -1,8 +1,9 @@
 // web/lib/aipult/validator.js
 // Whitelist + regex validation for AiPULT cards. Pure functions, no I/O.
-
-import { scenarioId as baseScenarioId } from '../validation.js';
-import { AppError } from '../errors.js';
+//
+// BROWSER-SAFE: this file has no Node-specific imports. It can be served
+// statically to the browser (e.g. via /web/lib/aipult/ route in app.js)
+// and imported by both Node server code and browser-side UI code.
 
 export const ALLOWED_INTENTS = Object.freeze([
   'restyle', 'render', 'revise', 'view', 'list',
@@ -18,12 +19,36 @@ export const FORBIDDEN_PATTERNS = Object.freeze([
   { name: 'parent-traversal', re: /(?<![A-Za-z0-9_])\.\.(?:\/|\\)/ },
 ]);
 
-// === Custom errors ===========================================================
+// === ID regex (inlined — same as web/lib/validation.js#ID_RE) ================
 
-export class AipultValidationError extends AppError {
+const ID_RE = /^[A-Za-z0-9_-]{4,64}$/;
+
+function checkScenarioId(value) {
+  if (typeof value !== 'string' || !ID_RE.test(value)) {
+    const err = new Error(`Invalid scenario ID: ${value}`);
+    err.code = 'INVALID_SCENARIO_ID';
+    err.status = 400;
+    throw err;
+  }
+  return value;
+}
+
+// === Custom errors (browser-safe) ============================================
+//
+// These are intentionally NOT extending `web/lib/errors.js#AppError` because
+// that file imports `randomUUID` from 'crypto' (Node-only). Instead, we use
+// a local class with the same shape (status, code, message, details).
+//
+// `web/lib/errors.js#errorMiddleware` recognizes errors with `code` + `status`
+// via duck-typing, so these work seamlessly on both server and client.
+
+export class AipultValidationError extends Error {
   constructor(code, message, details) {
-    super(400, code, message, details);
+    super(message);
     this.name = 'AipultValidationError';
+    this.code = code;
+    this.status = 400;
+    this.details = details;
   }
 }
 
@@ -47,9 +72,9 @@ export function validateIntent(intent) {
 
 export function validateScenarioId(id) {
   try {
-    return baseScenarioId(String(id));
+    return checkScenarioId(String(id));
   } catch (err) {
-    if (err instanceof AppError && err.code === 'INVALID_SCENARIO_ID') {
+    if (err.code === 'INVALID_SCENARIO_ID') {
       throw AipultInvalidScenarioId(id);
     }
     throw err;

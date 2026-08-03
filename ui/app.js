@@ -229,12 +229,20 @@ function scenarioCard(sc, status) {
       <span class="tag">🔒 Только чтение</span>
     </div>`;
   }
+  // HTML/PNG ссылки для rendered и published (только когда есть артефакт)
+  const htmlLink = (status === 'rendered' || status === 'published')
+    ? `<div class="actions comic-links">
+        <a class="comic-html-btn" href="/comics/${sc.id}.html" target="_blank" rel="noopener" title="Открыть HTML-версию (self-contained, inline CSS)">🔗 HTML</a>
+        <a class="comic-png-btn" href="/comics/${sc.id}.png" target="_blank" rel="noopener" title="Открыть PNG-версию">🖼 PNG</a>
+      </div>`
+    : '';
   return `
     <div class="card">
       <h3>${escapeHtml(sc.title)}</h3>
       <div class="meta">${tags} <code>${sc.id}</code></div>
       <div class="panels">${panels}${more}</div>
       ${actions}
+      ${htmlLink}
     </div>`;
 }
 
@@ -267,7 +275,13 @@ function attachHandlers(status) {
             btn.textContent = '🎨 Рендер запущен';
             setTimeout(() => loadTab(status), 1000);
           } else if (res.status === 409) {
-            btn.textContent = 'Уже в процессе';
+            // Различаем 409 причины — раньше все мапились на «Уже в процессе»
+            const code = data?.error?.code || '';
+            if (code === 'BUSY') btn.textContent = '⏳ Уже в процессе';
+            else if (code === 'RERENDER_CONFIRMATION_REQUIRED') btn.textContent = '🔄 Нужен re-render';
+            else if (code === 'APPROVAL_REQUIRED') btn.textContent = '⛔ Утверди сначала';
+            else if (code === 'PUBLISHED_IMMUTABLE') btn.textContent = '🔒 Только чтение';
+            else btn.textContent = `⚠️ ${code || '409'}`;
           } else {
             btn.textContent = 'Ошибка';
             console.error('Render error:', data.error);
@@ -338,11 +352,19 @@ async function loadComics() {
     container.innerHTML = '<div class="empty">Нет выпусков</div>';
     return;
   }
-  container.innerHTML = comics.map(c => `
+  container.innerHTML = comics.map(c => {
+    const id = c.scenario_id || c.filename.replace(/\.png$/, '');
+    const htmlUrl = `/comics/${id}.html`;
+    return `
     <div class="card comic-card">
-      <img src="${c.url}" alt="${c.filename}" loading="lazy">
-      <div class="meta">${c.filename}</div>
-    </div>`).join('');
+      <a href="${c.url}" target="_blank" rel="noopener"><img src="${c.url}" alt="${escapeHtml(c.filename)}" loading="lazy"></a>
+      <div class="meta">${escapeHtml(c.filename)}</div>
+      <div class="actions">
+        <a class="comic-html-btn" href="${htmlUrl}" target="_blank" rel="noopener" title="Открыть HTML-версию (self-contained, inline CSS)">🔗 Открыть HTML</a>
+        <a class="comic-png-btn" href="${c.url}" target="_blank" rel="noopener" title="Открыть PNG-версию">🖼 PNG</a>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function escapeHtml(s) {

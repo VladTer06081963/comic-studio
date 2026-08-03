@@ -53,7 +53,7 @@ export function htmlStaticRouter({ config }) {
       return next(notFound('HTML_NOT_GENERATED', 'Comic HTML has not been generated yet'));
     }
     res.set('Content-Type', 'text/html; charset=utf-8');
-    res.set('Cache-Control', 'public, max-age=60');
+    res.set('Cache-Control', 'no-cache, must-revalidate');
     return res.sendFile(path.resolve(filePath));
   }));
 
@@ -85,7 +85,7 @@ export function htmlStaticRouter({ config }) {
       return next(notFound('PANEL_NOT_FOUND', `Panel file ${name} not found`));
     }
     res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=3600, immutable');
+    res.set('Cache-Control', 'no-cache, must-revalidate');
     return res.sendFile(path.resolve(filePath));
   }));
 

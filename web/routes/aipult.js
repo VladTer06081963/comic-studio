@@ -13,6 +13,7 @@ import { asyncRoute, badRequest, AppError } from '../lib/errors.js';
 import * as validate from '../lib/validation.js';
 import { resolveScenario, listRecent } from '../lib/aipult/resolver.js';
 import { validateCard, validateCommandString, validateScenarioId } from '../lib/aipult/validator.js';
+import { tryHeuristic, parseHeuristic } from '../lib/aipult/heuristic.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -100,11 +101,43 @@ export function aipultRouter({ config, store, logger, aipultRunner }) {
     const candidates = resolveScenario(message, { dataRoot: config.dataRoot });
 
     if (candidates.length === 0) {
+      // No scenario candidates — but list/stats intents don't need one.
+      // Try heuristic with empty candidates before declaring no_match.
+      const noMatchHeuristic = tryHeuristic(message, []);
+      if (noMatchHeuristic) {
+        logger.info('aipult.chat.heuristic_succeeded', {
+          request_id: req.id, card_id: noMatchHeuristic.card_id, intent: noMatchHeuristic.intent,
+        });
+        return res.json({ card: noMatchHeuristic, request_id: req.id });
+      }
+      // UX hint: restyle intent detected but no explicit style specified.
+      // Don't default to "bubble" silently (overwrites user's custom style).
+      const hint = parseHeuristic(message, []);
+      if (hint.intent === 'restyle' && !hint.style) {
+        return res.json({
+          card: null,
+          candidates: [],
+          message: 'Укажите стиль для restyle: bubble, star, gothic, boom, memo, bar. Например: "поменяй стиль у X на gothic".',
+          request_id: req.id,
+        });
+      }
       logger.info('aipult.chat.no_candidates', { request_id: req.id, message_preview: message.slice(0, 100) });
       return res.json({
         card: null,
         candidates: [],
         message: 'No matching scenarios found. Use /api/aipult/list to browse.',
+        request_id: req.id,
+      });
+    }
+
+    // UX hint: restyle intent detected (in candidates branch) but no explicit style.
+    // parseHeuristic sets needsStyle=true and tryHeuristic returns null.
+    const restyleHint = parseHeuristic(message, candidates);
+    if (restyleHint.needsStyle) {
+      return res.json({
+        card: null,
+        candidates,
+        message: 'Укажите стиль для restyle: bubble, star, gothic, boom, memo, bar. Например: "поменяй стиль у X на gothic".',
         request_id: req.id,
       });
     }
@@ -118,6 +151,27 @@ export function aipultRouter({ config, store, logger, aipultRunner }) {
         message: 'Multiple matching scenarios. Pick one.',
         request_id: req.id,
       });
+    }
+
+    // Step 1.5: try heuristic first (avoids 30s Python LLM subprocess for
+    // clear simple commands like "поменяй стиль у X на Y"). LLM is fallback
+    // for ambiguous queries heuristic can't handle.
+    const heuristicCard = tryHeuristic(message, candidates);
+    if (heuristicCard) {
+      try {
+        validateCard(heuristicCard);
+      } catch (err) {
+        logger.warn('aipult.chat.heuristic_rejected', {
+          request_id: req.id, error_code: err.code, error: err.message,
+        });
+        // fall through to LLM
+      }
+      if (heuristicCard) {
+        logger.info('aipult.chat.heuristic_succeeded', {
+          request_id: req.id, card_id: heuristicCard.card_id, intent: heuristicCard.intent,
+        });
+        return res.json({ card: heuristicCard, request_id: req.id });
+      }
     }
 
     // Step 2: ask LLM

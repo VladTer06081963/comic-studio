@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { makeTestRuntime, writeScenario, jsonFetch, listen } from './helpers.js';
-import { resolveScenario, listRecent } from '../lib/aipult/resolver.js';
+import { resolveScenario, listRecent, extractKeywords, bestScore } from '../lib/aipult/resolver.js';
 import {
   validateCard,
   validateIntent,
@@ -14,6 +14,7 @@ import {
   sanitizeForLog,
   AipultValidationError,
 } from '../lib/aipult/validator.js';
+import { tryHeuristic, parseHeuristic, buildHeuristicCard } from '../lib/aipult/heuristic.js';
 import { AipultRunner } from '../lib/aipult/runner.js';
 import { MemoryLogger, FakeRunner } from './helpers.js';
 
@@ -53,6 +54,93 @@ test('aipult: resolver marks disambiguation when top-2 scores are close', () => 
   assert.ok(result.length >= 2);
   assert.equal(result[0].ambiguity, true);
   assert.equal(result[1].ambiguity, true);
+});
+
+test('aipult: resolver handles natural-language query with stop words', () => {
+  const scenarios = [
+    { id: 'b16e0660', title: 'Роза и Яша', status: 'rendered' },
+    { id: 'cat00001', title: 'Кот в одиночестве', status: 'rendered' },
+  ];
+  // "поменяй стиль у Роза и Яша на star" should match "Роза и Яша"
+  const result = resolveScenario('поменяй стиль у Роза и Яша на star', { dataRoot: '/tmp', scenarios });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, 'b16e0660');
+  assert.equal(result[0].resolution_method, 'title_match');
+  assert.ok(result[0].confidence >= 0.6, `expected confidence >= 0.6, got ${result[0].confidence}`);
+});
+
+test('aipult: resolver handles English natural-language query', () => {
+  const scenarios = [
+    { id: 'cat00001', title: 'Cat in solitude', status: 'rendered' },
+    { id: 'dog00001', title: 'A dog story', status: 'rendered' },
+  ];
+  const result = resolveScenario('please change the style of cat to gothic', { dataRoot: '/tmp', scenarios });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, 'cat00001');
+});
+
+test('aipult: extractKeywords drops stop words and intent verbs', () => {
+  const kw = extractKeywords('поменяй стиль у Роза и Яша на star');
+  assert.ok(kw.includes('роза'), `expected 'роза' in keywords: ${kw}`);
+  assert.ok(kw.includes('яша'), `expected 'яша' in keywords: ${kw}`);
+  assert.ok(kw.includes('star'), `expected 'star' in keywords: ${kw}`);
+  for (const w of ['поменяй', 'стиль', 'у', 'на', 'и']) {
+    assert.ok(!kw.includes(w), `stop word '${w}' should be dropped: ${kw}`);
+  }
+});
+
+// === Heuristic parser =======================================================
+
+test('aipult-ui: heuristic detects restyle intent with style', () => {
+  const cands = [{ id: 'b16e0660', title: 'Роза и Яша', status: 'rendered', confidence: 1, resolution_method: 'title_match' }];
+  const card = tryHeuristic('поменяй стиль у Роза и Яша на star', cands);
+  assert.ok(card, 'heuristic should return card');
+  assert.equal(card.intent, 'restyle');
+  assert.equal(card.command, 'python3 scripts/restyle.py --scenario-id b16e0660 --style star');
+  assert.equal(card.resolved_scenario.id, 'b16e0660');
+  assert.equal(card.estimated_cost, '$0');
+  // CRITICAL: card.style must be set so runner uses correct style (not default bubble)
+  assert.equal(card.style, 'star', 'card.style must match parsed style');
+});
+
+test('aipult-ui: heuristic defaults to view for explicit ID with no keywords', () => {
+  const cands = [{ id: '8eaa57cc', title: 'Кот в одиночестве', status: 'published', confidence: 1, resolution_method: 'title_match' }];
+  const card = tryHeuristic('8eaa57cc', cands);
+  assert.ok(card);
+  assert.equal(card.intent, 'view');
+  assert.equal(card.command, 'GET /api/scenarios/8eaa57cc');
+});
+
+test('aipult-ui: heuristic returns list card without scenario', () => {
+  const card = tryHeuristic('покажи список сценариев', []);
+  assert.ok(card);
+  assert.equal(card.intent, 'list');
+  assert.equal(card.command, 'GET /api/scenarios?status=all');
+  assert.equal(card.resolved_scenario, null);
+});
+
+test('aipult-ui: heuristic returns stats card without scenario', () => {
+  const card = tryHeuristic('покажи статистику', []);
+  assert.ok(card);
+  assert.equal(card.intent, 'stats');
+  assert.equal(card.command, 'GET /api/stats');
+});
+
+test('aipult-ui: heuristic returns null for ambiguous message', () => {
+  const card = tryHeuristic('привет как дела', []);
+  assert.equal(card, null);
+});
+
+test('aipult-ui: heuristic specific intent patterns beat generic "покажи"', () => {
+  // "покажи список" should match list, not view
+  const c1 = tryHeuristic('покажи список', []);
+  assert.equal(c1.intent, 'list');
+  // "покажи статистику" should match stats
+  const c2 = tryHeuristic('покажи статистику', []);
+  assert.equal(c2.intent, 'stats');
+  // Plain "покажи" without specifics → needs scenario for view
+  const c3 = tryHeuristic('покажи', []);
+  assert.equal(c3, null);
 });
 
 // ============================================================================

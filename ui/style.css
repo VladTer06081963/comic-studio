@@ -96,6 +96,25 @@ h2 { margin-top: 0; }
 .actions button.reject { background: var(--red); color: white; border-color: var(--red); }
 .actions button:hover { filter: brightness(1.15); }
 
+/* HTML/PNG ссылки в карточках комиксов и rendered scenarios */
+.comic-links { gap: 0.4rem !important; flex-wrap: wrap; }
+.comic-html-btn, .comic-png-btn {
+  display: inline-block;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s;
+}
+.comic-html-btn:hover { border-color: var(--accent); color: var(--accent); }
+.comic-png-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
 .comic-card img {
   width: 100%;
   border-radius: 4px;

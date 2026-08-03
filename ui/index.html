@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Comic Studio — Дашборд</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="aipult.css">
 </head>
 <body>
   <header>
@@ -15,6 +16,7 @@
       <button data-tab="approved">Утверждённые</button>
       <button data-tab="rendered">Готовые</button>
       <button data-tab="comics">Комиксы</button>
+      <button data-tab="aipult">🤖 AiPULT</button>
       <button data-tab="help">ℹ️ Помощь</button>
     </nav>
   </header>
@@ -71,6 +73,37 @@
     <section id="tab-comics" class="tab-content">
       <h2>🖼️ Все выпуски</h2>
       <div id="comics-list" class="grid"></div>
+    </section>
+
+    <section id="tab-aipult" class="tab-content">
+      <div class="aipult-header">
+        <h2>🤖 AiPULT</h2>
+        <button id="aipult-clear" class="aipult-clear-btn" type="button" title="Очистить историю">🗑</button>
+      </div>
+      <p class="aipult-subtitle">
+        AI-ассистент: <b>не выполняет команды сам</b>. Готовит карточку с командой — вы решаете.
+      </p>
+
+      <div id="aipult-suggestions" class="aipult-suggestions">
+        <small>Попробуй:</small>
+        <button class="aipult-chip" type="button" data-suggestion="поменяй стиль у кота на gothic">🎨 стиль у кота на gothic</button>
+        <button class="aipult-chip" type="button" data-suggestion="покажи последние 5">📋 последние 5</button>
+        <button class="aipult-chip" type="button" data-suggestion="перерисуй последний rendered">🔄 последний rendered</button>
+      </div>
+
+      <div id="aipult-messages" class="aipult-messages" role="log" aria-live="polite"></div>
+
+      <form id="aipult-form" class="aipult-form" autocomplete="off">
+        <textarea
+          id="aipult-input"
+          class="aipult-input"
+          rows="2"
+          maxlength="1000"
+          placeholder="Например: поменяй стиль у кота на gothic…"
+          aria-label="Сообщение для AiPULT"
+        ></textarea>
+        <button type="submit" id="aipult-send" class="aipult-send-btn" title="Отправить">📤</button>
+      </form>
     </section>
 
     <section id="tab-help" class="tab-content">
@@ -181,5 +214,6 @@
 
   <script src="approve.js"></script>
   <script src="app.js"></script>
+  <script type="module" src="aipult.js"></script>
 </body>
 </html>

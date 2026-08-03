@@ -41,7 +41,11 @@ export function errorMiddleware(logger) {
       err = badRequest('INVALID_JSON', 'Malformed JSON body');
     } else if (error?.type === 'entity.too.large') {
       err = new AppError(413, 'PAYLOAD_TOO_LARGE', 'Request body exceeds configured limit');
-    } else if (!(error instanceof AppError)) {
+    } else if (!(error instanceof AppError) && !(error && typeof error.code === 'string' && typeof error.status === 'number')) {
+      // Not an AppError and doesn't have a valid error shape (code + status) —
+      // wrap as INTERNAL_ERROR. Browser-safe errors (e.g. AipultValidationError
+      // from web/lib/aipult/validator.js) pass through because they have the
+      // right shape even though they don't extend AppError.
       err = new AppError(500, 'INTERNAL_ERROR', 'Internal server error');
     }
 

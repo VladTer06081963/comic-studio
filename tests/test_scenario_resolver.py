@@ -143,6 +143,41 @@ class TestScenarioResolver(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["id"], "bbb00002")
 
+    def test_natural_language_query_with_stop_words(self):
+        # Real bug: "поменяй стиль у Роза и Яша на star" should match "Роза и Яша"
+        self._write("rendered", make_scenario("b16e0660", "Роза и Яша"))
+        result = resolver.resolve_scenario("поменяй стиль у Роза и Яша на star")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], "b16e0660")
+        self.assertGreaterEqual(result[0]["confidence"], 0.6)
+
+    def test_english_natural_language_query(self):
+        self._write("rendered", make_scenario("cat001", "Cat in solitude"))
+        result = resolver.resolve_scenario("please change the style of cat to gothic")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], "cat001")
+        self.assertGreaterEqual(result[0]["confidence"], 0.6)
+
+    def test_extract_keywords_drops_stop_words(self):
+        keywords = resolver._extract_keywords("поменяй стиль у Роза и Яша на star")
+        self.assertIn("роза", keywords)
+        self.assertIn("яша", keywords)
+        self.assertIn("star", keywords)
+        # Stop words and verbs dropped
+        for w in ("поменяй", "стиль", "у", "на", "и"):
+            self.assertNotIn(w, keywords)
+
+    def test_best_score_token_bigram_phrase(self):
+        # Whole phrase "роза и яша" should match "Роза и Яша" with high score
+        score = resolver._best_score("роза и яша", "Роза и Яша")
+        self.assertGreaterEqual(score, 90)
+        # Single token "роза" should also match well
+        score_tok = resolver._best_score("роза", "Роза и Яша")
+        self.assertGreaterEqual(score_tok, 60)
+        # Whole phrase with stop words (longer) should also match
+        score_long = resolver._best_score("поменяй стиль у Роза и Яша на star", "Роза и Яша")
+        self.assertGreaterEqual(score_long, 60)
+
 
 if __name__ == "__main__":
     unittest.main()

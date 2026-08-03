@@ -28,6 +28,12 @@ export function createApp(runtime, { idGenerator } = {}) {
   app.use(express.json({ limit: config.bodyLimit }));
 
   app.use('/ui', express.static(config.uiRoot, { fallthrough: true, index: 'index.html' }));
+  // Expose pure-function modules to the browser. These files contain no
+  // secrets and are imported by `ui/aipult.js` via relative path
+  // `../web/lib/aipult/...`. Whitelisted explicitly to avoid leaking
+  // server-only modules (process_runner, lifecycle, scenario_store, etc.).
+  // Use absolute path because server may run from /web/ cwd (npm run dev).
+  app.use('/web/lib/aipult', express.static(path.resolve(config.projectRoot, 'web/lib/aipult'), { fallthrough: true, index: false, maxAge: '1h' }));
   app.use(htmlStaticRouter({ config }));
   app.get('/comics/:filename', (req, res, next) => {
     try {
@@ -38,6 +44,7 @@ export function createApp(runtime, { idGenerator } = {}) {
       if (!candidate || !['rendered', 'published'].includes(candidate.state)) return next();
       const filePath = safeResolve(config.dataRoot, 'comics', `${id}.png`);
       if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return next();
+      res.set('Cache-Control', 'no-cache, must-revalidate');
       res.sendFile(path.resolve(filePath));
     } catch (error) { next(error); }
   });

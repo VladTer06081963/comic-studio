@@ -16,6 +16,32 @@ const AMBIGUITY_GAP = 10;
 const CONTEXT_PREVIEW_CHARS = 200;
 const DEFAULT_LIMIT = 5;
 
+// Stop words dropped for natural-language queries so
+// "поменяй стиль у Роза и Яша на star" → tokens "роза яша star" → matches "Роза и Яша".
+const STOP_WORDS = new Set([
+  // Russian
+  'у', 'на', 'и', 'в', 'с', 'по', 'для', 'это', 'что', 'как', 'а', 'но', 'или', 'же', 'бы', 'ли', 'не', 'ни', 'то',
+  'он', 'она', 'они', 'мы', 'вы', 'я', 'ты', 'мне', 'тебе', 'ему', 'ей', 'нам', 'вам', 'их', 'его', 'ее',
+  'из', 'от', 'до', 'за', 'над', 'под', 'при', 'без', 'через', 'между',
+  'тот', 'этот', 'такой', 'какой', 'весь', 'все', 'всё', 'кто', 'где', 'когда', 'чтобы', 'потому', 'если', 'только', 'уже', 'ещё', 'еще', 'так',
+  'там', 'тут', 'здесь', 'очень', 'просто', 'сейчас', 'можно',
+  // English
+  'the', 'a', 'an', 'of', 'to', 'in', 'on', 'at', 'for', 'by', 'with', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
+  'i', 'you', 'he', 'she', 'it', 'we', 'they', 'my', 'your', 'his', 'its', 'our', 'their',
+  'this', 'that', 'these', 'those',
+  // Common UI/intent verbs (don't help matching)
+  'поменяй', 'сделай', 'измени', 'удали', 'добавь', 'убери', 'создай', 'покажи', 'найди', 'запусти', 'открой', 'закрой',
+  'сделать', 'поменять', 'изменить', 'узнать', 'посмотреть', 'рендери', 'нарисуй',
+  'стиль', 'стиле', 'стиля', 'комикс', 'комикса', 'комиксы', 'комиксе', 'цвет', 'цвета', 'картинку', 'картинки', 'файл', 'файла',
+  'make', 'change', 'show', 'find', 'delete', 'create', 'render', 'open', 'style', 'color', 'image', 'file',
+]);
+
+function extractKeywords(phrase) {
+  const tokens = String(phrase).toLowerCase().match(/[а-яёa-z0-9]+/g) || [];
+  return tokens.filter((t) => t.length >= 2 && !STOP_WORDS.has(t));
+}
+
 /**
  * Lightweight Levenshtein-based ratio for short strings. Returns 0-100.
  * Source pattern: rapidfuzzy.fuzz.partial_ratio (best-substring alignment).
@@ -25,7 +51,8 @@ function partialRatio(needle, haystack) {
   if (!needle || !haystack) return 0;
   let n = needle.toLowerCase();
   let h = haystack.toLowerCase();
-  if (h.includes(n)) return 100;
+  // Substring match only for needles ≥3 chars (avoid "to"→"story", "a"→"a dog")
+  if (n.length >= 3 && h.includes(n)) return 100;
   if (n.length > h.length) {
     const tmp = n; n = h; h = tmp; // ensure n is shorter
   }
@@ -69,11 +96,34 @@ function loadAllScenarios(dataRoot) {
 }
 
 function scoreCandidate(phrase, scenario) {
-  const titleScore = partialRatio(phrase, String(scenario.title || ''));
+  // Best-of-tokens matching: пробует whole phrase, каждый keyword, каждую
+  // bigram против title и context. Берёт MAX. Использует extractKeywords
+  // чтобы drop stop words ("the", "и", "поменяй") — иначе они дают
+  // ложные substring match в любой title.
+  const title = String(scenario.title || '');
   const context = String(scenario.context || '').slice(0, CONTEXT_PREVIEW_CHARS);
-  const contextScore = context ? partialRatio(phrase, context) * CONTEXT_WEIGHT : 0;
+  const titleScore = bestScore(phrase, title);
+  const contextScore = context ? bestScore(phrase, context) * CONTEXT_WEIGHT : 0;
   if (titleScore >= contextScore) return { score: titleScore, method: 'title_match' };
   return { score: contextScore, method: 'context_match' };
+}
+
+function bestScore(needle, haystack) {
+  if (!haystack || !needle) return 0;
+  // Filter to keywords (drop stop words + 1-char tokens) to avoid false
+  // substring matches like "the"→"The Mysterious Glitch" or "to"→"story".
+  const tokens = extractKeywords(needle);
+  let best = tokens.length > 0 ? partialRatio(needle, haystack) : 0;
+  for (const tok of tokens) {
+    const s = partialRatio(tok, haystack);
+    if (s > best) best = s;
+  }
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const bigram = `${tokens[i]} ${tokens[i + 1]}`;
+    const s = partialRatio(bigram, haystack);
+    if (s > best) best = s;
+  }
+  return best;
 }
 
 function isRecencyPhrase(phrase) {
@@ -93,6 +143,8 @@ function isRecencyPhrase(phrase) {
  * @param {Array}  [options.scenarios] - preloaded scenarios (for tests)
  * @returns {Array<{id, title, status, confidence, resolution_method, created_at, ambiguity?}>}
  */
+export { extractKeywords, bestScore };
+
 export function resolveScenario(phrase, { dataRoot, limit = DEFAULT_LIMIT, recencyStatus = 'rendered', scenarios } = {}) {
   if (typeof phrase !== 'string') throw new TypeError('phrase must be a string');
   const trimmed = phrase.trim();
@@ -100,18 +152,24 @@ export function resolveScenario(phrase, { dataRoot, limit = DEFAULT_LIMIT, recen
 
   const all = scenarios || loadAllScenarios(dataRoot);
 
-  // 1. Explicit ID short-circuit
-  if (ID_RE.test(trimmed)) {
-    const found = all.find((s) => s.id === trimmed);
-    if (found) {
-      return [{
-        id: found.id,
-        title: found.title,
-        status: found.status,
-        confidence: 1.0,
-        resolution_method: 'explicit_id',
-        created_at: found.created_at || '',
-      }];
+  // 1. Explicit ID short-circuit (also matches when ID is embedded in phrase,
+  //    e.g. "покажи сценарий 8eaa57cc" or "view 8eaa57cc please")
+  const idMatch = trimmed.match(/\b[A-Za-z0-9_-]{4,64}\b/g);
+  if (idMatch) {
+    for (const candidate of idMatch) {
+      if (ID_RE.test(candidate)) {
+        const found = all.find((s) => s.id === candidate);
+        if (found) {
+          return [{
+            id: found.id,
+            title: found.title,
+            status: found.status,
+            confidence: 1.0,
+            resolution_method: 'explicit_id',
+            created_at: found.created_at || '',
+          }];
+        }
+      }
     }
   }
 
