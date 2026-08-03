@@ -112,6 +112,24 @@ export function scenariosRouter({ config, store, lifecycle, runner, jobManager }
     });
   }));
 
+  router.post('/:id/restyle', asyncRoute(async (req, res) => {
+    const id = validate.scenarioId(req.params.id);
+    const style = validate.captionStyle(req.body?.style || 'bubble');
+    const existing = store.get(id);
+    if (!['rendered', 'published'].includes(existing.state)) {
+      throw conflict('INVALID_STATE', 'Restyle works only for rendered or published scenarios');
+    }
+    const args = ['scripts/restyle.py', '--scenario-id', id, '--style', style];
+    await runner.run(config.pythonBin, args, {
+      cwd: config.projectRoot,
+      timeoutMs: 30000,
+      outputLimit: config.processOutputLimit,
+      requestId: req.id,
+      operation: 'scenario.restyle',
+    });
+    res.json({ ok: true, id, status: existing.state, style, request_id: req.id });
+  }));
+
   router.post('/:id/remix', asyncRoute(async (req, res) => {
     const id = validate.scenarioId(req.params.id);
     const overrides = {};

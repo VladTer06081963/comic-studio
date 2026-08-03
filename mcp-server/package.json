@@ -1,0 +1,14 @@
+{
+  "name": "comic-studio-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for Comic Studio",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "dotenv": "^16.4.5"
+  }
+}
