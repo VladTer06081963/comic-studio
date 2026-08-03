@@ -183,6 +183,8 @@ WHEN `ui/aipult.css` загружен,
 THEN `getComputedStyle(document.documentElement).getPropertyValue('--tg-theme-bg-color')`
 SHALL вернуть non-empty value (default = `var(--bg)`).
 
+## ADDED Requirements
+
 ### Requirement: Dashboard deep-link with focus highlight
 
 `ui/app.js` SHALL читать `?focus=<scenario_id>` query parameter при загрузке

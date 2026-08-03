@@ -182,10 +182,37 @@ function renderCard(card) {
 
   const btnRead = makeBtn('📖 Подробнее', 'aipult-card-btn', () => onRead(card));
   const btnEdit = makeBtn('✏️ Ред.', 'aipult-card-btn', () => onEdit(root, card));
-  const btnRun = makeBtn('▶️ Run', 'aipult-card-btn aipult-card-btn--run', () => onRun(root, card, card.command));
+  // Show Run only for executable intents. In Phase 1 only `restyle` is
+  // executable via subprocess. For view/list/stats, the user can use 📖
+  // Подробнее or open the dashboard directly. The runner would otherwise
+  // return exit -1 ("AIPULT_INTENT_NOT_EXECUTABLE") on these intents.
+  const EXECUTABLE = new Set(['restyle']);
+  const canRun = EXECUTABLE.has(card.intent) && card.command && card.scenario_id;
+  if (canRun) {
+    const btnRun = makeBtn('▶️ Run', 'aipult-card-btn aipult-card-btn--run', () => onRun(root, card, card.command));
+    actions.append(btnRun);
+  } else {
+    // For view intent, show "Open scenario" button linking to the dashboard
+    if (card.intent === 'view' && card.scenario_id) {
+      const openBtn = makeBtn('🔗 Открыть в дашборде', 'aipult-card-btn', () => {
+        window.open(`/ui/?tab=rendered&focus=${encodeURIComponent(card.scenario_id)}`, '_blank');
+      });
+      actions.append(openBtn);
+    }
+    // For list intent, show "Open Comics tab" button (all comics)
+    if (card.intent === 'list') {
+      const openBtn = makeBtn('🔗 Открыть каталог', 'aipult-card-btn', () => {
+        window.open('/ui/?tab=comics', '_blank');
+      });
+      actions.append(openBtn);
+    }
+    // For stats intent, no action — user can read JSON inline
+    if (card.intent === 'stats') {
+      actions.append(makeBtn('📖 Подробнее', 'aipult-card-btn', () => onRead(card)));
+    }
+  }
   const btnReject = makeBtn('❌', 'aipult-card-btn aipult-card-btn--reject', () => onReject(root));
-
-  actions.append(btnRead, btnEdit, btnRun, btnReject);
+  actions.append(btnRead, btnEdit, btnReject);
   root.appendChild(actions);
 
   messagesEl.appendChild(root);
@@ -295,7 +322,7 @@ function onEdit(cardEl, card) {
     }
   });
 
-  // Replace actions with [Отмена] [▶️ Run с правкой]
+  // Replace actions with [Отмена] [▶️ Run с правкой if executable]
   const actions = cardEl.querySelector('.aipult-card-actions');
   const newActions = document.createElement('div');
   newActions.className = 'aipult-card-actions';
@@ -304,16 +331,22 @@ function onEdit(cardEl, card) {
     cardEl.remove();
     renderCard({ ...card, command: original });
   });
-  const run = makeBtn('▶️ Run с правкой', 'aipult-card-btn aipult-card-btn--run', () => {
-    try {
-      validateCommandString(ta.value);
-    } catch (err) {
-      appendErrorBubble(`${err.code}: ${err.message}`);
-      return;
-    }
-    onRun(cardEl, card, ta.value);
-  });
-  newActions.append(cancel, run);
+  // Same EXECUTABLE set as in renderCard (must stay in sync)
+  const EDIT_EXECUTABLE = new Set(['restyle']);
+  if (EDIT_EXECUTABLE.has(card.intent)) {
+    const run = makeBtn('▶️ Run с правкой', 'aipult-card-btn aipult-card-btn--run', () => {
+      try {
+        validateCommandString(ta.value);
+      } catch (err) {
+        appendErrorBubble(`${err.code}: ${err.message}`);
+        return;
+      }
+      onRun(cardEl, card, ta.value);
+    });
+    newActions.append(cancel, run);
+  } else {
+    newActions.append(cancel);
+  }
   actions.replaceWith(newActions);
 
   ta.focus();

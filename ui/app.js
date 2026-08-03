@@ -165,13 +165,25 @@ document.getElementById('create-form')?.addEventListener('submit', async (e) => 
 const tabs = document.querySelectorAll('nav button');
 const contents = document.querySelectorAll('.tab-content');
 
+function activateTab(name) {
+  for (const t of tabs) {
+    t.classList.toggle('active', t.dataset.tab === name);
+  }
+  for (const c of contents) {
+    c.classList.toggle('active', c.id === `tab-${name}`);
+  }
+  loadTab(name);
+}
+
 tabs.forEach(t => t.addEventListener('click', () => {
-  tabs.forEach(x => x.classList.remove('active'));
-  contents.forEach(x => x.classList.remove('active'));
-  t.classList.add('active');
-  document.getElementById(`tab-${t.dataset.tab}`).classList.add('active');
-  loadTab(t.dataset.tab);
+  activateTab(t.dataset.tab);
 }));
+
+// Initial activation: respect ?tab=... query param (so links from AiPULT
+// chat panel can deep-link to a specific tab). Defaults to "draft" otherwise.
+const initialTab = new URLSearchParams(location.search).get('tab');
+const knownTab = [...tabs].some((t) => t.dataset.tab === initialTab);
+activateTab(knownTab ? initialTab : 'draft');
 
 async function loadTab(name) {
   if (name === 'comics') return loadComics();
@@ -186,6 +198,24 @@ async function loadTab(name) {
   }
   container.innerHTML = scenarios.map(sc => scenarioCard(sc, name)).join('');
   attachHandlers(name);
+
+  // Highlight focused card if URL has ?focus=<id> (deep-link from AiPULT chat).
+  // Runs in next frame so the freshly-inserted DOM is measurable.
+  const focusId = new URLSearchParams(location.search).get('focus');
+  if (focusId) {
+    requestAnimationFrame(() => {
+      const card = document.querySelector(`.card[data-scenario-id="${CSS.escape(focusId)}"]`);
+      if (card) {
+        card.classList.add('card--focused');
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => card.classList.remove('card--focused'), 3000);
+      }
+      // Strip ?focus= from URL so F5 doesn't re-trigger the highlight.
+      const url = new URL(location.href);
+      url.searchParams.delete('focus');
+      history.replaceState({}, '', url);
+    });
+  }
 }
 
 function scenarioCard(sc, status) {
@@ -237,7 +267,7 @@ function scenarioCard(sc, status) {
       </div>`
     : '';
   return `
-    <div class="card">
+    <div class="card" data-scenario-id="${sc.id}">
       <h3>${escapeHtml(sc.title)}</h3>
       <div class="meta">${tags} <code>${sc.id}</code></div>
       <div class="panels">${panels}${more}</div>
@@ -371,11 +401,8 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
-// Initial load
-loadTab('draft');
-
-// Auto-refresh every 10 seconds
+// Auto-refresh every 10 seconds (current active tab, respects URL deep-link)
 setInterval(() => {
-  const active = document.querySelector('nav button.active').dataset.tab;
+  const active = document.querySelector('nav button.active')?.dataset?.tab || 'draft';
   loadTab(active);
 }, 10000);

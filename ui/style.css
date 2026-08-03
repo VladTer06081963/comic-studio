@@ -121,6 +121,20 @@ h2 { margin-top: 0; }
   border: 1px solid var(--border);
 }
 
+/* Highlight focused card (deep-link from AiPULT chat with ?focus=<id>) */
+.card--focused {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+  position: relative;
+  z-index: 10;
+  animation: pulse-focus 1s ease-out 2;
+}
+@keyframes pulse-focus {
+  0%   { outline-color: var(--accent);  outline-offset: 4px; }
+  50%  { outline-color: var(--accent2); outline-offset: 8px; }
+  100% { outline-color: var(--accent);  outline-offset: 4px; }
+}
+
 .tag {
   display: inline-block;
   background: var(--border);
