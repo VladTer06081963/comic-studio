@@ -6,6 +6,7 @@ import { LifecycleService } from './lifecycle.js';
 import { ProcessRunner } from './process_runner.js';
 import { JobStore } from './job_store.js';
 import { JobManager } from './job_manager.js';
+import { AipultRunner } from './aipult/runner.js';
 import { safeResolve } from './validation.js';
 
 function defaultOnRevisionComplete({ config, store, logger }) {
@@ -41,6 +42,7 @@ export function createRuntime(config, overrides = {}) {
   const jobStore = overrides.jobStore || new JobStore({ dataRoot: config.dataRoot, logger });
   const onRevisionComplete = overrides.onRevisionComplete || defaultOnRevisionComplete({ config, store, logger });
   const jobManager = overrides.jobManager || new JobManager({ config, jobStore, runner, logger, onRevisionComplete });
+  const aipultRunner = overrides.aipultRunner || new AipultRunner({ config, logger, processRunner: runner });
   let stopping = false;
 
   function cleanupArtifacts() {
@@ -67,7 +69,7 @@ export function createRuntime(config, overrides = {}) {
   logger.info('web.runtime.initialized', { recovered_transitions: recoveredTransitions, recovered_trash: recoveredTrash, interrupted_jobs: interruptedJobs, removed_jobs: removedJobs });
 
   return {
-    config, logger, store, lifecycle, runner, jobStore, jobManager,
+    config, logger, store, lifecycle, runner, jobStore, jobManager, aipultRunner,
     isShuttingDown: () => stopping,
     cleanupArtifacts,
     async shutdown() {

@@ -9,10 +9,11 @@ import { scenariosRouter } from './routes/scenarios.js';
 import { jobsRouter } from './routes/jobs.js';
 import { comicsRouter } from './routes/comics.js';
 import { healthRouter } from './routes/health.js';
+import { aipultRouter } from './routes/aipult.js';
 import { htmlStaticRouter } from './lib/html_static.js';
 
 export function createApp(runtime, { idGenerator } = {}) {
-  const { config, logger, store, lifecycle, runner, jobStore, jobManager } = runtime;
+  const { config, logger, store, lifecycle, runner, jobStore, jobManager, aipultRunner } = runtime;
   const app = express();
   app.disable('x-powered-by');
   app.use(requestIdMiddleware(idGenerator));
@@ -44,6 +45,7 @@ export function createApp(runtime, { idGenerator } = {}) {
   app.use('/api/scenarios', scenariosRouter({ config, store, lifecycle, runner, jobManager }));
   app.use('/api/jobs', jobsRouter({ jobStore }));
   app.use('/api/comics', comicsRouter({ config, store }));
+  app.use('/api/aipult', aipultRouter({ config, store, logger, aipultRunner }));
   app.use('/api', healthRouter({ config, runner, shuttingDown: runtime.isShuttingDown }));
 
   app.use(notFoundMiddleware);

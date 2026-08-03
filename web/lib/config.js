@@ -100,5 +100,7 @@ export function loadConfig(env = process.env, overrides = {}) {
     maxRevisionFeedbackCount: overrides.maxRevisionFeedbackCount ?? intValue(env, 'WEB_MAX_REVISION_FEEDBACK_COUNT', 20, { min: 1, max: 200 }),
     maxRevisionHistory: overrides.maxRevisionHistory ?? intValue(env, 'WEB_MAX_REVISION_HISTORY', 10, { min: 1, max: 50 }),
     shutdownGraceMs: overrides.shutdownGraceMs ?? intValue(env, 'WEB_SHUTDOWN_GRACE_MS', 15_000, { min: 100, max: 300_000 }),
+    aipultTimeoutMs: overrides.aipultTimeoutMs ?? intValue(env, 'WEB_AIPULT_TIMEOUT_MS', 30_000, { min: 1000, max: 300_000 }),
+    aipultOutputLimit: overrides.aipultOutputLimit ?? intValue(env, 'WEB_AIPULT_OUTPUT_LIMIT', 5 * 1024 * 1024, { min: 1024, max: 100 * 1024 * 1024 }),
   });
 }
