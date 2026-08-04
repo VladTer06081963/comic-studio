@@ -335,6 +335,10 @@ function scenarioCard(sc, status, activeJobs = []) {
   const fastEditBtn = (status === 'rendered' || status === 'published') && !isBusy
     ? `<button class="restyle-btn" data-id="${sc.id}">⚡️ Быстрая правка</button>`
     : '';
+    
+  const publishBtn = (status === 'rendered') && !isBusy
+    ? `<button class="publish" data-id="${sc.id}" data-action="publish">🚀 Опубликовать</button>`
+    : '';
 
   let actions;
   if (status === 'draft') {
@@ -347,6 +351,7 @@ function scenarioCard(sc, status, activeJobs = []) {
   } else if (status === 'approved' || status === 'rendered') {
     actions = `
     <div class="actions">
+      ${publishBtn}
       ${fastEditBtn}
       ${editBtn}
       ${renderBtn}
@@ -461,21 +466,26 @@ function attachHandlers(status) {
     });
   }
 
-  // Approve/reject only for draft
-  if (status !== 'draft') return;
-  document.querySelectorAll(`#${status}-list .actions button.approve, #${status}-list .actions button.reject`).forEach(btn => {
+  // Status transition buttons (approve, reject, publish)
+  document.querySelectorAll(`#${status}-list .actions button.approve, #${status}-list .actions button.reject, #${status}-list .actions button.publish`).forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       const action = btn.dataset.action;
       btn.disabled = true;
       btn.textContent = '⏳';
-      const res = await apiFetch(`/api/scenarios/${id}/${action}`, { method: 'POST' });
-      const result = await res.json();
-      if (result.ok) {
-        btn.textContent = action === 'approve' ? '✅' : '❌';
-        setTimeout(() => loadTab(status), 500);
-      } else {
+      try {
+        const res = await apiFetch(`/api/scenarios/${id}/${action}`, { method: 'POST' });
+        const result = await res.json();
+        if (result.ok) {
+          btn.textContent = action === 'approve' ? '✅' : action === 'publish' ? '🚀' : '❌';
+          setTimeout(() => loadTab(status), 500);
+        } else {
+          btn.textContent = 'Ошибка';
+          alert(`Ошибка: ${result.error?.message || 'Неизвестная ошибка'}`);
+        }
+      } catch (e) {
         btn.textContent = 'Ошибка';
+        alert(`Ошибка сети: ${e.message}`);
       }
     });
   });

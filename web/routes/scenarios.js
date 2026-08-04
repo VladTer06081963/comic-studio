@@ -175,5 +175,24 @@ export function scenariosRouter({ config, store, lifecycle, runner, jobManager }
     res.json({ ok: true, id, artifacts, request_id: req.id });
   }));
 
+  router.post('/:id/publish', asyncRoute(async (req, res) => {
+    const id = validate.scenarioId(req.params.id);
+    const existing = store.get(id);
+    if (existing.state !== 'rendered') {
+      throw conflict('INVALID_STATE', 'Only rendered scenarios can be published');
+    }
+    const args = ['scripts/publish_rendered.js', '--scenario-id', id];
+    await runner.run('node', args, {
+      cwd: config.projectRoot,
+      timeoutMs: 60000,
+      outputLimit: config.processOutputLimit,
+      requestId: req.id,
+      operation: 'scenario.publish',
+    });
+    // The script moves the file, so it should now be in 'published' state
+    const updated = store.get(id);
+    res.json({ ok: true, id, status: updated.state, request_id: req.id });
+  }));
+
   return router;
 }

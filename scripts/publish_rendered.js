@@ -17,12 +17,18 @@ function atomicWrite(filePath, data) {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+  const targetId = args.includes('--scenario-id') ? args[args.indexOf('--scenario-id') + 1] : null;
+
   const renderedDir = path.join(PROJECT_ROOT, 'data', 'scenarios', 'rendered');
   if (!fs.existsSync(renderedDir)) {
     console.log('No rendered scenarios');
     return { succeeded: [], failed: [], skipped: [] };
   }
-  const files = fs.readdirSync(renderedDir).filter(f => f.endsWith('.json'));
+  let files = fs.readdirSync(renderedDir).filter(f => f.endsWith('.json'));
+  if (targetId) {
+    files = files.filter(f => f === `${targetId}.json`);
+  }
   if (!files.length) {
     console.log('No rendered scenarios');
     return { succeeded: [], failed: [], skipped: [] };
