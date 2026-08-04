@@ -114,12 +114,30 @@ export function scenariosRouter({ config, store, lifecycle, runner, jobManager }
 
   router.post('/:id/restyle', asyncRoute(async (req, res) => {
     const id = validate.scenarioId(req.params.id);
-    const style = validate.captionStyle(req.body?.style || 'bubble');
+    const style = req.body?.style ? validate.captionStyle(req.body.style) : undefined;
+    const captions = Array.isArray(req.body?.captions) ? req.body.captions : undefined;
+    
     const existing = store.get(id);
     if (!['rendered', 'published'].includes(existing.state)) {
       throw conflict('INVALID_STATE', 'Restyle works only for rendered or published scenarios');
     }
-    const args = ['scripts/restyle.py', '--scenario-id', id, '--style', style];
+    
+    if (captions) {
+      await store.update(id, async (record) => {
+        if (captions.length !== record.panels.length) {
+           const err = new Error('Captions length must match panels length');
+           err.code = 'INVALID_CAPTIONS';
+           throw err;
+        }
+        record.panels.forEach((p, i) => {
+           if (typeof captions[i] === 'string') p.caption = captions[i];
+        });
+        return record;
+      });
+    }
+
+    const currentStyle = style || existing.record.style || 'bubble';
+    const args = ['scripts/restyle.py', '--scenario-id', id, '--style', currentStyle];
     await runner.run(config.pythonBin, args, {
       cwd: config.projectRoot,
       timeoutMs: 30000,
@@ -127,7 +145,7 @@ export function scenariosRouter({ config, store, lifecycle, runner, jobManager }
       requestId: req.id,
       operation: 'scenario.restyle',
     });
-    res.json({ ok: true, id, status: existing.state, style, request_id: req.id });
+    res.json({ ok: true, id, status: existing.state, style: currentStyle, request_id: req.id });
   }));
 
   router.post('/:id/remix', asyncRoute(async (req, res) => {

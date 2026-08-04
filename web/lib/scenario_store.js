@@ -358,6 +358,7 @@ export class ScenarioStore {
   }
 
   cleanupLegacyStaging(retentionMs) {
+    if (!fs.existsSync(this.legacyRoot)) return 0;
     const cutoff = this.clock().getTime() - retentionMs;
     let removed = 0;
     for (const entry of fs.readdirSync(this.legacyRoot, { withFileTypes: true })) {

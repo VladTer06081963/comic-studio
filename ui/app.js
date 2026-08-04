@@ -132,6 +132,77 @@ document.getElementById('edit-save')?.addEventListener('click', async () => {
 document.getElementById('edit-modal')?.addEventListener('click', (e) => {
   if (e.target.id === 'edit-modal') closeEditModal();
 });
+
+// Fast Edit (Restyle) Modal Logic
+let currentRestyleId = null;
+
+async function openRestyleModal(id) {
+  currentRestyleId = id;
+  document.getElementById('restyle-id').textContent = id;
+  const container = document.getElementById('restyle-captions-container');
+  container.innerHTML = '⏳ Загрузка...';
+  document.getElementById('restyle-modal').classList.remove('hidden');
+
+  try {
+    const res = await apiFetch(`/api/scenarios/${id}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(apiError(data));
+    
+    document.getElementById('restyle-style').value = data.style || 'bubble';
+    
+    container.innerHTML = data.panels.map((p, i) => `
+      <div style="margin-bottom:10px;">
+        <label>Панель ${p.n}:</label>
+        <textarea class="restyle-caption-input" rows="2" style="width:100%">${escapeHtml(p.caption)}</textarea>
+      </div>
+    `).join('');
+  } catch (err) {
+    container.innerHTML = `❌ Ошибка: ${err.message}`;
+  }
+}
+
+function closeRestyleModal() {
+  currentRestyleId = null;
+  document.getElementById('restyle-modal').classList.add('hidden');
+}
+
+document.getElementById('restyle-cancel')?.addEventListener('click', closeRestyleModal);
+document.getElementById('restyle-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'restyle-modal') closeRestyleModal();
+});
+
+document.getElementById('restyle-save')?.addEventListener('click', async () => {
+  if (!currentRestyleId) return;
+  const style = document.getElementById('restyle-style').value;
+  const captionInputs = document.querySelectorAll('.restyle-caption-input');
+  const captions = Array.from(captionInputs).map(input => input.value.trim());
+
+  const btn = document.getElementById('restyle-save');
+  btn.disabled = true;
+  btn.textContent = '⏳ Сохраняю...';
+
+  try {
+    const res = await apiFetch(`/api/scenarios/${currentRestyleId}/restyle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ style, captions }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      closeRestyleModal();
+      const activeTab = document.querySelector('nav button.active').dataset.tab;
+      loadTab(activeTab);
+    } else {
+      alert(`Ошибка: ${apiError(data)}`);
+    }
+  } catch (err) {
+    alert(`Ошибка: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡️ Сохранить';
+  }
+});
+
 // ── Create Form Handler ──────────────────────────────────────────────────────
 document.getElementById('create-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -188,15 +259,22 @@ activateTab(knownTab ? initialTab : 'draft');
 async function loadTab(name) {
   if (name === 'comics') return loadComics();
   if (name === 'help' || name === 'create') return; // Static/local form content, no fetch needed
-  const res = await apiFetch(`/api/scenarios?status=${name}`);
-  const payload = await res.json();
+  const [resScen, resJobs] = await Promise.all([
+    apiFetch(`/api/scenarios?status=${name}`),
+    apiFetch(`/api/jobs`)
+  ]);
+  const payload = await resScen.json();
   const scenarios = Array.isArray(payload) ? payload : (payload.items || []);
+  const payloadJobs = await resJobs.json();
+  const jobs = Array.isArray(payloadJobs) ? payloadJobs : (payloadJobs.items || []);
+  const activeJobs = jobs.filter(j => j.status === 'queued' || j.status === 'running');
+
   const container = document.getElementById(`${name}-list`);
   if (!scenarios.length) {
     container.innerHTML = '<div class="empty">Пусто</div>';
     return;
   }
-  container.innerHTML = scenarios.map(sc => scenarioCard(sc, name)).join('');
+  container.innerHTML = scenarios.map(sc => scenarioCard(sc, name, activeJobs)).join('');
   attachHandlers(name);
 
   // Highlight focused card if URL has ?focus=<id> (deep-link from AiPULT chat).
@@ -218,24 +296,46 @@ async function loadTab(name) {
   }
 }
 
-function scenarioCard(sc, status) {
+function scenarioCard(sc, status, activeJobs = []) {
+  const activeJob = activeJobs.find(j => j.scenario_id === sc.id);
+  const isBusy = !!activeJob;
+
   const panels = sc.panels.slice(0, 3).map(p => `<div>${p.n}. ${escapeHtml(p.caption)}</div>`).join('');
   const more = sc.panels.length > 3 ? `<div>…+${sc.panels.length - 3}</div>` : '';
   const imageStyleBadge = getImageStyleBadge(sc.image_style || 'comic');
   const feedbackBadge = getFeedbackBadge(sc.feedback_count ?? (sc.feedback || []).length);
   const seedBadge = sc.seed !== undefined ? `<span class="tag">🎲 ${sc.seed}</span>` : '';
-  const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge} ${feedbackBadge} ${seedBadge}`;
-  const renderBtn = status === 'rendered'
-    ? `<button class="render" data-id="${sc.id}" data-action="render">🔄 Re-render</button>`
-    : `<button class="render" data-id="${sc.id}" data-action="render">🎨 Рендер</button>`;
-  const seedBtn = status === 'rendered'
-    ? `<button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed + re-render</button>`
-    : `<button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed</button>`;
-  const editBtn = (status === 'approved' || status === 'rendered')
-    ? `<button class="edit" data-id="${sc.id}" data-action="edit">🔄 Revision</button>`
-    : status === 'published'
-      ? `<button class="edit" data-id="${sc.id}" data-action="edit">🎨 Remix</button>`
-      : '';
+  
+  let jobBadge = '';
+  if (isBusy) {
+    jobBadge = `<span class="tag" style="background:#ff9800;color:white">⏳ ${activeJob.type === 'render' ? 'Рендер...' : 'Обработка...'}</span>`;
+  }
+  const tags = `<span class="tag ${sc.style}">${sc.style}</span><span class="tag">${sc.tone}</span> ${imageStyleBadge} ${feedbackBadge} ${seedBadge} ${jobBadge}`;
+  
+  const renderBtn = isBusy
+    ? `<button class="render" disabled>⏳ В процессе</button>`
+    : status === 'rendered'
+      ? `<button class="render" data-id="${sc.id}" data-action="render">🔄 Re-render</button>`
+      : `<button class="render" data-id="${sc.id}" data-action="render">🎨 Рендер</button>`;
+  
+  const seedBtn = isBusy
+    ? `<button class="seed" disabled>⏳</button>`
+    : status === 'rendered'
+      ? `<button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed + re-render</button>`
+      : `<button class="seed" data-id="${sc.id}" data-action="seed">🎲 Seed</button>`;
+  
+  const editBtn = isBusy
+    ? `<button class="edit" disabled>⏳</button>`
+    : (status === 'approved' || status === 'rendered')
+      ? `<button class="edit" data-id="${sc.id}" data-action="edit">🔄 Revision</button>`
+      : status === 'published'
+        ? `<button class="edit" data-id="${sc.id}" data-action="edit">🎨 Remix</button>`
+        : '';
+        
+  const fastEditBtn = (status === 'rendered' || status === 'published') && !isBusy
+    ? `<button class="restyle-btn" data-id="${sc.id}">⚡️ Быстрая правка</button>`
+    : '';
+
   let actions;
   if (status === 'draft') {
     actions = `
@@ -247,6 +347,7 @@ function scenarioCard(sc, status) {
   } else if (status === 'approved' || status === 'rendered') {
     actions = `
     <div class="actions">
+      ${fastEditBtn}
       ${editBtn}
       ${renderBtn}
       ${seedBtn}
@@ -255,6 +356,7 @@ function scenarioCard(sc, status) {
   } else {
     actions = `
     <div class="actions">
+      ${fastEditBtn}
       ${editBtn}
       <span class="tag">🔒 Только чтение</span>
     </div>`;
@@ -280,6 +382,11 @@ function attachHandlers(status) {
   // Edit button works for all statuses
   document.querySelectorAll(`#${status}-list .actions button.edit`).forEach(btn => {
     btn.addEventListener('click', () => openEditModal(btn.dataset.id));
+  });
+
+  // Fast Edit button
+  document.querySelectorAll(`#${status}-list .actions button.restyle-btn`).forEach(btn => {
+    btn.addEventListener('click', () => openRestyleModal(btn.dataset.id));
   });
 
   // Delete button

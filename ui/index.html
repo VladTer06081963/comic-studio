@@ -212,6 +212,35 @@
     </div>
   </div>
 
+  <!-- Fast Edit / Restyle Modal -->
+  <div id="restyle-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>⚡️ Быстрая правка (без рендера)</h3>
+      <p>ID: <code id="restyle-id"></code></p>
+      
+      <div class="form-group">
+        <label for="restyle-style">Стиль баблов:</label>
+        <select id="restyle-style">
+          <option value="bubble">💬 Bubble</option>
+          <option value="star">⭐ Star (взрыв)</option>
+          <option value="gothic">🏰 Gothic</option>
+          <option value="boom">💥 Boom</option>
+          <option value="memo">📝 Memo</option>
+          <option value="bar">📊 Bar</option>
+        </select>
+      </div>
+
+      <div id="restyle-captions-container" class="form-group">
+        <!-- Textareas will be injected here -->
+      </div>
+
+      <div class="modal-actions">
+        <button id="restyle-cancel">Отмена</button>
+        <button id="restyle-save">⚡️ Сохранить</button>
+      </div>
+    </div>
+  </div>
+
   <script src="approve.js"></script>
   <script src="app.js"></script>
   <script type="module" src="aipult.js"></script>

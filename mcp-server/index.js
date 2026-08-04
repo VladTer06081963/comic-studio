@@ -135,6 +135,35 @@ class ComicStudioMcpServer {
               },
               required: ["phrase"]
             }
+          },
+          {
+            name: "read_comic_image",
+            description: "Read a comic image (composite or individual panel) to analyze it visually",
+            inputSchema: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "Scenario ID" },
+                panel: { type: "number", description: "Panel number (e.g. 1, 2, 3). If omitted, returns the composite image." }
+              },
+              required: ["id"]
+            }
+          },
+          {
+            name: "update_comic_text",
+            description: "Fast-update the text (captions) or bubble style of a rendered comic WITHOUT re-rendering images. Use this to fix typos, change dialogues, or restyle bubbles instantly.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "Scenario ID" },
+                style: { type: "string", description: "Optional new bubble style (e.g. bubble, gothic, boom)" },
+                captions: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Optional array of new text strings for all panels in order"
+                }
+              },
+              required: ["id"]
+            }
           }
         ]
       };
@@ -197,6 +226,36 @@ class ComicStudioMcpServer {
             limit: args.limit || 5
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+
+        if (name === "read_comic_image") {
+          const imagePath = args.panel ? `/comics/${args.id}/panel_${args.panel}.png` : `/comics/${args.id}.png`;
+          const url = `${API_BASE_URL}${imagePath}`;
+          const res = await fetch(url);
+          if (!res.ok) throw new McpError(ErrorCode.InvalidParams, `Image not found or not generated yet: ${imagePath}`);
+          const buffer = await res.arrayBuffer();
+          const base64 = Buffer.from(buffer).toString("base64");
+          return {
+            content: [
+              {
+                type: "image",
+                data: base64,
+                mimeType: "image/png"
+              },
+              {
+                type: "text",
+                text: `Successfully loaded image: ${imagePath}`
+              }
+            ]
+          };
+        }
+
+        if (name === "update_comic_text") {
+          const res = await this.apiFetch(`/api/scenarios/${args.id}/restyle`, "POST", {
+            style: args.style,
+            captions: args.captions
+          });
+          return { content: [{ type: "text", text: `Success! Comic updated instantly. View at ${API_BASE_URL}/comics/${args.id}.html` }] };
         }
 
         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
