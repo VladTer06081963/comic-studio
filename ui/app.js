@@ -349,19 +349,24 @@ function scenarioCard(sc, status, activeJobs = []) {
       <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
     </div>`;
   } else if (status === 'approved' || status === 'rendered') {
+    const topActions = (publishBtn || fastEditBtn) 
+      ? `<div class="actions" style="margin-bottom: 0.5rem;">${publishBtn}${fastEditBtn}</div>` 
+      : '';
     actions = `
+    ${topActions}
     <div class="actions">
-      ${publishBtn}
-      ${fastEditBtn}
       ${editBtn}
       ${renderBtn}
       ${seedBtn}
       <button class="delete" data-id="${sc.id}" data-action="delete">🗑 Удалить</button>
     </div>`;
   } else {
+    const topActions = fastEditBtn 
+      ? `<div class="actions" style="margin-bottom: 0.5rem;">${fastEditBtn}</div>` 
+      : '';
     actions = `
+    ${topActions}
     <div class="actions">
-      ${fastEditBtn}
       ${editBtn}
       <span class="tag">🔒 Только чтение</span>
     </div>`;

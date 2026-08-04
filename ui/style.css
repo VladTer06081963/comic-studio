@@ -260,6 +260,8 @@ h2 { margin-top: 0; }
 .actions button.delete { background: var(--red); color: white; border-color: var(--red); }
 .actions button.render { background: var(--accent); color: white; border-color: var(--accent); }
 .actions button.seed { background: var(--muted); color: black; border-color: var(--muted); }
+.actions button.publish, .actions button.restyle-btn { background: #000; color: white; border-color: var(--border); font-weight: bold; }
+.actions button.publish:hover, .actions button.restyle-btn:hover { background: #222; }
 
 .feedback-badge {
   display: inline-block;
