@@ -1,0 +1,12 @@
+# Задачи: Fast Restyle & UX Fixes
+
+## Статус: ✅ Done
+
+| ID | Задача | Статус |
+|---|---|---|
+| 1 | Исправить ENOENT при `cleanupLegacyStaging` | ✅ Done |
+| 2 | Добавить документацию по настройке MCP (`MCP_GUIDE.md`) | ✅ Done |
+| 3 | Блокировать кнопку рендера в Web UI во время активной задачи | ✅ Done |
+| 4 | Реализовать поддержку `captions` в `POST /restyle` для обновления текстов | ✅ Done |
+| 5 | Добавить MCP инструмент `update_comic_text` | ✅ Done |
+| 6 | Добавить UI-модал "Быстрая правка" (Fast Edit) | ✅ Done |
