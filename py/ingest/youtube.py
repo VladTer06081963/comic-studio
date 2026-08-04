@@ -151,43 +151,10 @@ def _transcribe_voicebox(audio_path: Path, language: str = "ru") -> Optional[str
 
 def _fetch_audio_and_transcribe(video_id: str, workdir: Path, language: str = "ru") -> Optional[str]:
     """Скачивает аудио и транскрибирует: Voicebox → whisper."""
-    audio_path = workdir / f"{video_id}.mp3"
-    logger.info(f"Downloading audio to {audio_path}")
-
-    cmd = [
-        "yt-dlp",
-        "-x", "--audio-format", "mp3",
-        "-o", str(workdir / "%(id)s.%(ext)s"),
-        f"https://www.youtube.com/watch?v={video_id}",
-    ]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, timeout=300)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        logger.error(f"yt-dlp audio failed: {e}")
-        return None
-
-    if not audio_path.exists():
-        candidates = list(workdir.glob(f"{video_id}.*"))
-        if not candidates:
-            logger.error("No audio file produced")
-            return None
-        audio_path = candidates[0]
-
-    # Voicebox
-    text = _transcribe_voicebox(audio_path, language)
-    if text:
-        return text
-
-    # whisper fallback
-    logger.info("Falling back to whisper")
-    try:
-        import whisper
-        model = whisper.load_model("base")
-        result = model.transcribe(str(audio_path), language=None)
-        return result.get("text", "")
-    except ImportError:
-        logger.error("whisper not installed; pip install openai-whisper")
-        return None
+    # ЗАГЛУШКА ДЛЯ ДЕМО-ПРОДАКШЕНА
+    # Отключаем загрузку yt-dlp и запуск whisper, чтобы не перегружать 1GB RAM сервер.
+    logger.warning(f"Audio transcription for {video_id} is disabled in demo production.")
+    return None
 
 
 def transcribe_youtube(url: str, language: str = "ru") -> str:
