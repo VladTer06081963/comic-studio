@@ -115,79 +115,7 @@ def _fetch_subs(video_id: str, workdir: Path) -> Optional[str]:
     return text
 
 
-def _transcribe_voicebox(audio_path: Path, language: str = "ru") -> Optional[str]:
-    """Транскрибирует через Voicebox API. Возвращает текст или None."""
-    logger.info(f"Trying Voicebox transcription for {audio_path}")
-    try:
-        with open(audio_path, "rb") as f:
-            audio_data = f.read()
 
-        boundary = "----VoiceboxFormBoundary7MA4YWxkTrZu0gW"
-        body = b""
-        body += f"--{boundary}\r\n".encode()
-        body += f'Content-Disposition: form-data; name="file"; filename="{audio_path.name}"\r\n'.encode()
-        body += b"Content-Type: audio/mpeg\r\n\r\n"
-        body += audio_data
-        body += f"\r\n--{boundary}--\r\n".encode()
-
-        import urllib.request
-        req = urllib.request.Request(
-            f"{VOICEBOX_URL}/transcribe",
-            data=body,
-            headers={
-                "Content-Type": f"multipart/form-data; boundary={boundary}",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            result = json.loads(resp.read())
-            text = result.get("text", "").strip()
-            logger.info(f"Voicebox: {len(text)} chars")
-            return text
-    except Exception as e:
-        logger.warning(f"Voicebox transcription failed: {e}")
-        return None
-
-
-def _fetch_audio_and_transcribe(video_id: str, workdir: Path, language: str = "ru") -> Optional[str]:
-    """Скачивает аудио и транскрибирует: Voicebox → whisper."""
-    audio_path = workdir / f"{video_id}.mp3"
-    logger.info(f"Downloading audio to {audio_path}")
-
-    cmd = [
-        "yt-dlp",
-        "-x", "--audio-format", "mp3",
-        "-o", str(workdir / "%(id)s.%(ext)s"),
-        f"https://www.youtube.com/watch?v={video_id}",
-    ]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, timeout=300)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        logger.error(f"yt-dlp audio failed: {e}")
-        return None
-
-    if not audio_path.exists():
-        candidates = list(workdir.glob(f"{video_id}.*"))
-        if not candidates:
-            logger.error("No audio file produced")
-            return None
-        audio_path = candidates[0]
-
-    # Voicebox
-    text = _transcribe_voicebox(audio_path, language)
-    if text:
-        return text
-
-    # whisper fallback
-    logger.info("Falling back to whisper")
-    try:
-        import whisper
-        model = whisper.load_model("base")
-        result = model.transcribe(str(audio_path), language=None)
-        return result.get("text", "")
-    except ImportError:
-        logger.error("whisper not installed; pip install openai-whisper")
-        return None
 
 
 def transcribe_youtube(url: str, language: str = "ru") -> str:
@@ -206,14 +134,8 @@ def transcribe_youtube(url: str, language: str = "ru") -> str:
     if text:
         return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
 
-    # 3. Аудио + Voicebox/whisper (последний fallback)
-    with tempfile.TemporaryDirectory() as tmp:
-        workdir = Path(tmp)
-        logger.info("Trying audio transcription")
-        text = _fetch_audio_and_transcribe(video_id, workdir, language)
-        if not text:
-            raise RuntimeError(f"Failed to transcribe {url}")
-        return text[:MAX_TRANSCRIPT_CHARS] if len(text) > MAX_TRANSCRIPT_CHARS else text
+    # 3. Аудио транскрибация отключена
+    raise RuntimeError(f"Failed to transcribe {url}: No subs or Supadata response")
 
 
 if __name__ == "__main__":
