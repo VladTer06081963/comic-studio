@@ -63,3 +63,5 @@
 - `2026-08-03T22:35:47++00:00` — Реализован MCP-сервер (`mcp-server`) для Comic Studio на Node.js с портом по умолчанию 3300. Реализованы 7 инструментов: `list_scenarios`, `get_scenario`, `create_comic`, `approve_scenario`, `render_comic`, `revise_scenario` и `resolve_intent` (через AiPULT). Добавлен эндпоинт `POST /api/scenarios/:id/restyle` и инструмент `restyle_comic`. OpenSpec заархивирован.
 
 - `2026-08-04T11:00:21+03:00` — Added fast restyle capabilities to UI and MCP for instant caption updates without MiniMax rendering; fixed 409 UI bugs and legacy staging cleanup crash.
+
+- `2026-08-04T11:26:32+03:00` — Added UI Publish button, mobile responsive layout (media queries for <768px), and an internal HTML/PNG viewer with a 'Back' button for seamless navigation.
