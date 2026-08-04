@@ -374,8 +374,8 @@ function scenarioCard(sc, status, activeJobs = []) {
   // HTML/PNG ссылки для rendered и published (только когда есть артефакт)
   const htmlLink = (status === 'rendered' || status === 'published')
     ? `<div class="actions comic-links">
-        <a class="comic-html-btn" href="/comics/${sc.id}.html" target="_blank" rel="noopener" title="Открыть HTML-версию (self-contained, inline CSS)">🔗 HTML</a>
-        <a class="comic-png-btn" href="/comics/${sc.id}.png" target="_blank" rel="noopener" title="Открыть PNG-версию">🖼 PNG</a>
+        <a class="comic-html-btn" href="viewer.html?id=${sc.id}&type=html" title="Открыть HTML-версию (self-contained, inline CSS)">🔗 HTML</a>
+        <a class="comic-png-btn" href="viewer.html?id=${sc.id}&type=png" title="Открыть PNG-версию">🖼 PNG</a>
       </div>`
     : '';
   return `
@@ -512,8 +512,8 @@ async function loadComics() {
       <a href="${c.url}" target="_blank" rel="noopener"><img src="${c.url}" alt="${escapeHtml(c.filename)}" loading="lazy"></a>
       <div class="meta">${escapeHtml(c.filename)}</div>
       <div class="actions">
-        <a class="comic-html-btn" href="${htmlUrl}" target="_blank" rel="noopener" title="Открыть HTML-версию (self-contained, inline CSS)">🔗 Открыть HTML</a>
-        <a class="comic-png-btn" href="${c.url}" target="_blank" rel="noopener" title="Открыть PNG-версию">🖼 PNG</a>
+        <a class="comic-html-btn" href="viewer.html?id=${id}&type=html" title="Открыть HTML-версию (self-contained, inline CSS)">🔗 Открыть HTML</a>
+        <a class="comic-png-btn" href="viewer.html?id=${id}&type=png" title="Открыть PNG-версию">🖼 PNG</a>
       </div>
     </div>`;
   }).join('');
