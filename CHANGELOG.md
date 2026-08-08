@@ -67,3 +67,4 @@
 - `2026-08-04T11:26:32+03:00` — Added UI Publish button, mobile responsive layout (media queries for <768px), and an internal HTML/PNG viewer with a 'Back' button for seamless navigation.
 
 - `2026-08-04T11:38:37+03:00` — Created `DEMOPRODACTION.md` guide and `demo-production` Git branch with mocked heavy ML dependencies (Whisper, yt-dlp) for seamless deployment on minimal 1GB RAM servers.
+- `2026-08-08T07:14:26Z` — Унифицирована конфигурация портов (Ports Standardization). Порт `3000` утвержден как единый fallback по умолчанию. Обновлен `mcp-server/index.js` (убран хардкод 3300), из `tg-bot/bot.js` вычищены хардкоды `127.0.0.1:3000` в справочных сообщениях (используются `WEB_API_URL` и `WEB_PUBLIC_URL`), обновлен `.env.example`.

@@ -24,6 +24,8 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '1045621572';
 // (см. spec `web-comic-rendering-pipeline` → Telegram caption). Default '' —
 // backward-compat: Telegram-бот работает как раньше (только фото, без ссылки).
 const WEB_PUBLIC_URL = String(process.env.WEB_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+const WEB_API_URL = String(process.env.WEB_API_URL || 'http://127.0.0.1:3000').trim().replace(/\/+$/, '');
+const HELP_WEB_URL = WEB_PUBLIC_URL || WEB_API_URL;
 
 if (!BOT_TOKEN) {
   console.error('❌ TELEGRAM_BOT_TOKEN not set in .env');
@@ -324,7 +326,7 @@ bot.command('help', async (ctx) => {
     `• Доступно для <code>rendered</code> и <code>published</code>\n\n` +
     `<b>📁 HTML комикс и его редактирование:</b>\n` +
     `• Артефакты: <code>data/comics/&lt;ID&gt;.html</code> + <code>data/comics/&lt;ID&gt;/{panel_*.png,layout.json,fonts/}</code>\n` +
-    `• Открыть: <code>open data/comics/&lt;ID&gt;.html</code> или Web UI <code>http://127.0.0.1:3000/comics/&lt;ID&gt;.html</code>\n` +
+    `• Открыть: <code>open data/comics/&lt;ID&gt;.html</code> или Web UI <code>${HELP_WEB_URL}/comics/&lt;ID&gt;.html</code>\n` +
     `• HTML self-contained: inline-CSS, относительные пути <code>./&lt;ID&gt;/fonts/</code> и <code>./&lt;ID&gt;/panel_*.png</code>\n` +
     `• <b>Ручная правка текста:</b> открой .html в редакторе, найди <code>&lt;p&gt;...&lt;/p&gt;</code> внутри баблов — меняй текст\n` +
     `• <b>Смена класса бабла:</b> найди <code>class="bubble bubble--bubble ..."</code>, замени <code>bubble</code> на <code>gothic|star|boom|memo|bar</code>\n` +
@@ -556,7 +558,7 @@ bot.command('restyle', async (ctx) => {
     const cmd = `${VENV_PYTHON} scripts/restyle.py --scenario-id ${id} --style ${style}`;
     await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
     try { await ctx.deleteMessage(progressMsg.message_id); } catch (e) {}
-    const htmlUrl = `${WEB_PUBLIC_URL || 'http://127.0.0.1:3000'}/comics/${id}.html`;
+    const htmlUrl = `${HELP_WEB_URL}/comics/${id}.html`;
     await ctx.reply(
       `🎉 <b>Restyle завершён!</b>\n\n` +
       `<code>${escapeHtml(oldStyle)}</code> → <code>${escapeHtml(style)}</code>\n\n` +
@@ -702,8 +704,7 @@ bot.action(/^delete:(.+)$/, async (ctx) => {
   ctx.answerCbQuery('🗑 Удаляю...');
 
   try {
-    const url = process.env.WEB_API_URL || 'http://127.0.0.1:3000';
-    const resp = await fetch(`${url}/api/scenarios/${id}`, { method: 'DELETE' });
+    const resp = await fetch(`${WEB_API_URL}/api/scenarios/${id}`, { method: 'DELETE' });
     const data = await resp.json();
 
     if (data.ok) {
@@ -823,7 +824,7 @@ bot.action(/^remix:(.+)$/, async (ctx) => {
     return ctx.answerCbQuery('Remix только из published');
   }
   try {
-    const response = await fetch(`${process.env.WEB_API_URL || 'http://127.0.0.1:3000'}/api/scenarios/${id}/remix`, {
+    const response = await fetch(`${WEB_API_URL}/api/scenarios/${id}/remix`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -1075,7 +1076,7 @@ bot.on('text', async (ctx) => {
       `• Правки сохраняются как история\n\n` +
       `<b>📁 HTML комикс:</b>\n` +
       `• После рендера создаётся <code>data/comics/&lt;ID&gt;.html</code> — автономная HTML-страница\n` +
-      `• Открой в браузере: <code>open data/comics/&lt;ID&gt;.html</code> или через Web UI: <code>http://127.0.0.1:3000/comics/&lt;ID&gt;.html</code>\n` +
+      `• Открой в браузере: <code>open data/comics/&lt;ID&gt;.html</code> или через Web UI: <code>${HELP_WEB_URL}/comics/&lt;ID&gt;.html</code>\n` +
       `• <b>Редактирование:</b> HTML self-contained (inline CSS + локальные woff2 + относительные пути к панелям в <code>./&lt;ID&gt;/</code>)\n` +
       `  • Открой <code>.html</code> в текстовом редакторе — captions в тегах <code>&lt;p&gt;</code>, можно менять текст/порядок\n` +
       `  • Чтобы переключить стиль баблов на всех панелях: <code>/restyle ID gothic</code> (быстро, 2-5 сек)\n` +
@@ -1094,7 +1095,7 @@ bot.on('text', async (ctx) => {
     userState.delete(ctx.from.id);
     const id = state.scenarioId;
     try {
-      const response = await fetch(`${process.env.WEB_API_URL || 'http://127.0.0.1:3000'}/api/scenarios/${id}/revise`, {
+      const response = await fetch(`${WEB_API_URL}/api/scenarios/${id}/revise`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ feedback: [{ text, source: 'tg-bot' }] }),
@@ -1109,7 +1110,7 @@ bot.on('text', async (ctx) => {
           for (let i = 0; i < 20; i++) {
             await new Promise(r => setTimeout(r, 3000));
             try {
-              const jRes = await fetch(`${process.env.WEB_API_URL || 'http://127.0.0.1:3000'}/api/jobs/${jobId}`);
+              const jRes = await fetch(`${WEB_API_URL}/api/jobs/${jobId}`);
               if (jRes.ok) {
                 const jData = await jRes.json();
                 const status = jData.job?.status;
