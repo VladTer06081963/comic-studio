@@ -45,6 +45,8 @@ data/freeform/*
 # Comics output
 data/comics/**/*.png
 data/comics/**/*.json
+data/comics/**/*.html
+data/comics/*/
 
 # Keep directories structure
 !data/scenarios/draft/.gitkeep
