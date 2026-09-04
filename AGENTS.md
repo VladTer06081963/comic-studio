@@ -184,7 +184,32 @@ read this section and `FIXATION.md` end-to-end before starting.
 
 ## Branch workflow
 
-Two long-lived branches, both rooted at the same ancestor:
+### 🚨 Why these branches must stay separate
+
+The two branches exist because of a **hardware gap** that cannot be papered
+over with config:
+
+- **`main`** runs on **Mac Studio M1 Max, 32 GB RAM** — comfortable with
+  Whisper, large image models, full ML stack, multiple parallel services.
+- **`demo-production`** runs on **Oracle VPS, ~1 GB RAM** — minimum to run
+  the web UI and Telegram bot. Cannot host Whisper, yt-dlp, large image
+  models, or even full Python ML libraries.
+
+`demo-production` therefore has **stub implementations** of the heavy
+parts (Whisper transcription, yt-dlp ingestion). The full implementations
+live on `main`. If you merge `main` into `demo-production` carelessly:
+
+- The full Whisper deps land on the VPS → `pip install` fails or OOM-kills.
+- The full yt-dlp lands → install fails or runs out of disk.
+- The web server tries to call a real MiniMax API key that demo never had
+  → 401s on every render.
+- Disk fills, services crash, demo URL goes down.
+
+**Don't `git merge main` into `demo-production`. Ever.** Use cherry-pick
+below. If the cherry-pick friction becomes painful, switch to Variant D
+(overlay branch with rebase, see end of file).
+
+### Two long-lived branches, both rooted at the same ancestor
 
 | Branch | Environment | Purpose |
 |---|---|---|
