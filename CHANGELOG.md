@@ -72,3 +72,14 @@
 ## 2026-08-27
 
 - `2026-08-27T22:48:41+03:00` — Подключен **LM Studio как провайдер** для Hermes (`lmstudio-provider-setup`). Закрыт TODO #11 из аудита 020: `py/scenario/style_writer.py` больше не содержит хардкодов — все три параметра (URL/token/model) читаются из env (`LM_BASE_URL`/`LM_API_KEY`/`LM_MODEL`) с backward-compat fallback. В `~/.hermes/config.yaml` через `hermes config set` добавлены `providers.lmstudio` (base_url `http://127.0.0.1:1234/v1`, request_format=openai, context_window=32768) и `models.magnum-picaro` (provider=lmstudio, alias=magnum). В `~/.hermes/.env` `LM_BASE_URL` сменён с `192.168.50.250:1234` на `127.0.0.1:1234` (localhost не триггерит Hermes network guard). Verification: `curl http://127.0.0.1:1234/v1/models` с токеном → 200, 15 моделей в списке включая Magnum-Picaro-12B (7.12 GB loaded); `hermes config get providers.lmstudio` и `models.magnum-picaro` показывают все 4 ключа каждый, alias `magnum` резолвится в TUI. Audit: `summary/audit/022_lmstudio-provider-setup.md`. Tasks: `summary/tasks/022_lmstudio-provider-setup.md`. OpenSpec change не создавался — изменение конфигурации, не API surface.
+
+## 2026-09-04
+
+- `2026-09-04T22:30:00+03:00` — Приведение в порядок `summary/` и `openspec/`:
+  - **Расщеплены дубли 020/021**: `summary/audit/020_demo_production_setup.md` → `023_*`, `summary/audit/021_ports_audit_and_standardization.md` → `024_*` (и соответствующие `summary/tasks/*`). Cross-refs в `summary/tasks/022_lmstudio-provider-setup.md` и `summary/audit/022_*` сохранены (указывают на `020_two-stage`, который остался `020`). Заголовки в переименованных файлах обновлены.
+  - **`FIXATION.md`**: добавлена секция «Для mcode / Mavis агента» рядом с существующей «Для pi агента» — формат-эталон, conventional commit, напоминание про `web/server.js`. pi-секция сохранена.
+  - **`AGENTS.md`**: добавлена секция «Fixation procedure» со ссылкой на `FIXATION.md` (5 шагов) для mcode/Mavis.
+  - **Созданы `summary/tasks/_TEMPLATE.md` и `summary/audit/_TEMPLATE.md`** — эталон формата на основе `022_lmstudio-provider-setup.md`.
+  - **Удалены локальные `.DS_Store`** из корня, `summary/`, `openspec/`, `py/`, `scripts/`, `web/`, `data/` (правило `.gitignore:67` уже было — файлы были только локально, в git не попадали).
+  - **Format audit (22 файла)**: `022_*` = 9/9 (эталон), `020-021_*` = 5-7/9, `001-019_*` = 1-3/9 (исторический drift формата; **архивные файлы не правились** — переписывать прошлое дороже, чем задокументировать настоящее). Шаблон позволит будущим задачам автоматически иметь полный формат.
+  - **`mcp.json`**: добавлен в `~/.minimax/mcp.json` для подключения comic-studio MCP к mcode (через `cwd: ~/Projects/comic-studio` для загрузки `.env`).
