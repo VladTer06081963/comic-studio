@@ -368,3 +368,25 @@ connection per command. The cost: a small process start per call
 /mcode list published comics
   → reads data/comics/*.html, returns formatted list
 ```
+
+## Quality reference (vision)
+
+Target style/quality level we aim for in this project:
+
+- <https://openaiua.fr/comic/chernobyl-ritual/>
+
+A working Stalker/Chernobyl-themed multi-page comic with: dark tone,
+staged panels, captions, environment detail, character continuity.
+This is the **quality bar** for what comic-studio should produce.
+
+When evaluating renders, ask:
+- Does it match the Stalker atmosphere of the reference (gritty, post-Soviet,
+  not glossy)?
+- Are panels staged (foreground/midground/background) or flat?
+- Is there a character we can identify across pages?
+- Is the caption typography consistent with the reference style?
+
+The reference is external (we don't control it), so we measure **relative
+to** it, not **copy** it. If our renders are clearly below this bar
+after a few iterations, escalate to the user — that's a signal the
+model/style/prompt needs review, not a tweak.
