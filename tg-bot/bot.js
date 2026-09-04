@@ -27,6 +27,13 @@ const WEB_PUBLIC_URL = String(process.env.WEB_PUBLIC_URL || '').trim().replace(/
 const WEB_API_URL = String(process.env.WEB_API_URL || 'http://127.0.0.1:3000').trim().replace(/\/+$/, '');
 const HELP_WEB_URL = WEB_PUBLIC_URL || WEB_API_URL;
 
+// mcode CLI path (для /mcode команды). Override через env MCODE_BIN.
+const MCODE_BIN = process.env.MCODE_BIN || '/Users/vladteresena/.minimax-code/bin/mcode';
+// Рабочая директория mcode exec — обычно корень comic-studio.
+const MCODE_CWD = process.env.MCODE_CWD || PROJECT_ROOT;
+// Default timeout для /mcode: 10 минут.
+const MCODE_TIMEOUT_MS = Number(process.env.MCODE_TIMEOUT_MS || 10 * 60 * 1000);
+
 if (!BOT_TOKEN) {
   console.error('❌ TELEGRAM_BOT_TOKEN not set in .env');
   process.exit(1);
@@ -107,6 +114,24 @@ function escapeHtml(text) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Split string into chunks of at most `size` chars, breaking at line
+// boundaries where possible to keep Markdown / code blocks readable in
+// Telegram. Telegram limit is 4096 chars per message; we use 3800 for safety.
+function chunkString(text, size = 3800) {
+  const s = String(text || '');
+  if (s.length <= size) return [s];
+  const chunks = [];
+  let remaining = s;
+  while (remaining.length > size) {
+    let cut = remaining.lastIndexOf('\n', size);
+    if (cut < size / 2) cut = size; // no good newline, hard cut
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut).replace(/^\n/, '');
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
 }
 
 function formatScenarioCard(sc, status) {
@@ -568,6 +593,238 @@ bot.command('restyle', async (ctx) => {
   } catch (err) {
     try { await ctx.deleteMessage(progressMsg.message_id); } catch (e) {}
     await ctx.reply(`❌ <b>Ошибка restyle:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
+  }
+});
+
+// ── /mcode: forward task to mcode CLI (filesystem + bash workflow) ───────────
+//
+// Запускает mcode exec в PROJECT_ROOT и возвращает результат в Telegram.
+// Это **основной путь** для freeform-задач по comic-studio: mcode работает
+// через файлы и bash, не через MCP-тулы (см. AGENTS.md → "mcode exec vs TUI").
+//
+// Примеры:
+//   /mcode list draft scenarios
+//   /mcode show me what's in data/scenarios/draft/
+//   /mcode approve scenario abc12345
+//   /mcode render scenario abc12345
+//   /mcode create a new scenario: stalker meeting stranger at campfire
+//   /mcode explain the lifecycle in this project
+//
+// ENV:
+//   MCODE_BIN        — путь к бинарю mcode (default: /Users/vladteresena/.minimax-code/bin/mcode)
+//   MCODE_CWD        — рабочая директория (default: PROJECT_ROOT)
+//   MCODE_TIMEOUT_MS — таймаут в мс (default: 600000 = 10 min)
+bot.command('mcode', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+
+  const text = ctx.message.text || '';
+  const task = text.replace(/^\/mcode(@\w+)?\s*/, '').trim();
+  if (!task) {
+    return ctx.reply(
+      '🤖 <b>/mcode</b> — задача для mcode CLI\n\n' +
+      'Использование: <code>/mcode &lt;задача&gt;</code>\n\n' +
+      '<b>Примеры:</b>\n' +
+      '• <code>/mcode list draft scenarios</code>\n' +
+      '• <code>/mcode show me published comics</code>\n' +
+      '• <code>/mcode approve scenario abc12345</code>\n' +
+      '• <code>/mcode render scenario abc12345</code>\n' +
+      '• <code>/mcode create a scenario: stalker at campfire</code>\n' +
+      '• <code>/mcode explain the lifecycle of scenarios</code>\n\n' +
+      'mcode работает через файлы и bash в <code>PROJECT_ROOT</code>, ' +
+      'без MCP-тулов (см. AGENTS.md → "mcode exec vs TUI").',
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const statusMsg = await ctx.reply(
+    `🤖 <b>mcode exec</b>\n\n` +
+    `📋 <code>${escapeHtml(task)}</code>\n\n` +
+    `⏳ Запускаю (cwd: <code>${escapeHtml(MCODE_CWD)}</code>, таймаут: ${Math.round(MCODE_TIMEOUT_MS / 60000)} мин)...`,
+    { parse_mode: 'HTML' }
+  );
+
+  const startedAt = Date.now();
+  try {
+    // Безопасная подстановка: --cwd как отдельный argv, task — quoted shell-аргумент.
+    // execAsync использует shell, поэтому task в одинарных кавычках; внутри task
+    // экранируем одинарные кавычки.
+    const safeTask = task.replace(/'/g, `'\\''`);
+    const cmd = `${JSON.stringify(MCODE_BIN)} exec --cwd ${JSON.stringify(MCODE_CWD)} --permission smart '${safeTask}'`;
+    const { stdout, stderr } = await execAsync(cmd, {
+      cwd: PROJECT_ROOT,
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: MCODE_TIMEOUT_MS,
+    });
+
+    const result = (stdout || stderr || '(нет вывода)').trim();
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    const header = `✅ <b>Готово</b> за <code>${elapsed}s</code>\n\n`;
+
+    // Удаляем status-сообщение, шлём результат чанками.
+    try { await ctx.deleteMessage(statusMsg.message_id); } catch (e) {}
+
+    const chunks = chunkString(result, 3800);
+    for (let i = 0; i < chunks.length; i++) {
+      const sep = chunks.length > 1 ? ` <i>(${i + 1}/${chunks.length})</i>\n\n` : '\n\n';
+      await ctx.reply(header + sep + `<pre>${escapeHtml(chunks[i])}</pre>`, { parse_mode: 'HTML' });
+    }
+  } catch (e) {
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    const errMsg = String(e.stderr || e.stdout || e.message || e).slice(0, 3800);
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat.id, statusMsg.message_id, null,
+        `❌ <b>Ошибка mcode exec</b> (за <code>${elapsed}s</code>):\n\n` +
+        `<pre>${escapeHtml(errMsg)}</pre>`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (ee) {
+      await ctx.reply(
+        `❌ <b>Ошибка mcode exec</b> (за <code>${elapsed}s</code>):\n\n` +
+        `<pre>${escapeHtml(errMsg)}</pre>`,
+        { parse_mode: 'HTML' }
+      );
+    }
+  }
+});
+
+// ── /mcp и /mcp_list: прямой доступ к comic-studio MCP из бота ───────────────
+//
+// Эти команды дают **полную** функциональность MCP-тулов (10 штук) без LLM
+// в горячем пути. Дополняют /mcode: /mcp — для типизированных операций
+// (быстро, идемпотентно, без рассуждений), /mcode — для задач, требующих
+// LLM-рассуждений.
+//
+// Зачем отдельная команда вместо встраивания в /mcode:
+// - mcode exec не подгружает MCP-тулы в свой runtime (см. AGENTS.md).
+// - Прямой вызов — детерминированный, без модели, без догадок.
+// - Можно использовать в скриптах: /mcp resolve_intent '{"phrase":"ssh"}'
+//
+// Использование:
+//   /mcp_list                                  — список всех MCP-тулов
+//   /mcp <tool>                                — вызов с пустыми аргументами
+//   /mcp <tool> {"key": "value", ...}          — вызов с JSON-аргументами
+//
+// Примеры:
+//   /mcp list_scenarios
+//   /mcp list_scenarios {"status": "draft"}
+//   /mcp get_scenario {"id": "abc12345"}
+//   /mcp approve_scenario {"id": "abc12345"}
+//   /mcp render_comic {"id": "abc12345", "mode": "initial"}
+import {
+  createMcpClient,
+  listTools as mcpListTools,
+  callTool as mcpCallTool,
+  formatMcpResult,
+  closeMcpClient,
+} from './mcp-client.js';
+
+bot.command('mcp_list', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const statusMsg = await ctx.reply('🔌 <b>Подключаюсь к comic-studio MCP...</b>', { parse_mode: 'HTML' });
+
+  let handle;
+  try {
+    handle = await createMcpClient();
+    const tools = await mcpListTools(handle);
+    const lines = tools.map((t) => {
+      const params = t.inputSchema?.properties
+        ? Object.keys(t.inputSchema.properties).map((k) => {
+            const required = (t.inputSchema.required || []).includes(k);
+            return `${k}${required ? '*' : ''}`;
+          }).join(', ')
+        : '—';
+      return `<b>${escapeHtml(t.name)}</b>(<i>${escapeHtml(params)}</i>)\n  ${escapeHtml((t.description || '').substring(0, 200))}`;
+    });
+    await ctx.telegram.editMessageText(
+      ctx.chat.id, statusMsg.message_id, null,
+      `🔌 <b>comic-studio MCP — ${tools.length} тулов</b>\n\n${lines.join('\n\n')}`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (e) {
+    await ctx.telegram.editMessageText(
+      ctx.chat.id, statusMsg.message_id, null,
+      `❌ MCP error: <pre>${escapeHtml(String(e.message || e).slice(0, 3800))}</pre>`,
+      { parse_mode: 'HTML' }
+    );
+  } finally {
+    await closeMcpClient(handle);
+  }
+});
+
+bot.command('mcp', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+
+  const text = ctx.message.text || '';
+  const body = text.replace(/^\/mcp(@\w+)?\s*/, '').trim();
+
+  if (!body) {
+    return ctx.reply(
+      '🔌 <b>/mcp</b> — прямой вызов MCP-тула\n\n' +
+      'Использование:\n' +
+      '• <code>/mcp &lt;tool&gt;</code> — вызов без аргументов\n' +
+      '• <code>/mcp &lt;tool&gt; {"key": "value"}</code> — вызов с JSON-аргументами\n\n' +
+      'Сначала посмотри список тулов: <code>/mcp_list</code>',
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  // Парсим: первое слово — tool name, остальное — JSON args (опционально).
+  // Поддерживаем также формат "tool {...json...}" без пробелов.
+  let toolName, jsonPart;
+  const spaceIdx = body.indexOf(' ');
+  if (spaceIdx === -1) {
+    toolName = body;
+    jsonPart = '{}';
+  } else {
+    toolName = body.substring(0, spaceIdx);
+    jsonPart = body.substring(spaceIdx + 1).trim() || '{}';
+  }
+
+  let args = {};
+  try {
+    args = JSON.parse(jsonPart);
+  } catch (e) {
+    return ctx.reply(
+      `❌ Невалидный JSON в аргументах:\n<pre>${escapeHtml(jsonPart.substring(0, 500))}</pre>\n\n` +
+      `Пример: <code>/mcp ${escapeHtml(toolName)} {"key": "value"}</code>`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const statusMsg = await ctx.reply(
+    `🔌 <b>MCP</b> <code>${escapeHtml(toolName)}</code> ${Object.keys(args).length ? `<i>(${Object.keys(args).length} args)</i>` : ''}\n\n⏳ Вызываю...`,
+    { parse_mode: 'HTML' }
+  );
+
+  let handle;
+  try {
+    handle = await createMcpClient();
+    const result = await mcpCallTool(handle, toolName, args);
+    const formatted = formatMcpResult(result);
+    try { await ctx.deleteMessage(statusMsg.message_id); } catch (e) {}
+    if (result.isError) {
+      await ctx.reply(`❌ <b>${escapeHtml(toolName)}</b>:\n<pre>${escapeHtml(formatted)}</pre>`, { parse_mode: 'HTML' });
+    } else {
+      const chunks = chunkString(formatted, 3800);
+      for (let i = 0; i < chunks.length; i++) {
+        const sep = chunks.length > 1 ? ` <i>(${i + 1}/${chunks.length})</i>\n\n` : '\n\n';
+        await ctx.reply(`🔌 <b>${escapeHtml(toolName)}</b>${sep}<pre>${escapeHtml(chunks[i])}</pre>`, { parse_mode: 'HTML' });
+      }
+    }
+  } catch (e) {
+    const errMsg = String(e.message || e).slice(0, 3800);
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat.id, statusMsg.message_id, null,
+        `❌ MCP error: <pre>${escapeHtml(errMsg)}</pre>`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (ee) {
+      await ctx.reply(`❌ MCP error: <pre>${escapeHtml(errMsg)}</pre>`, { parse_mode: 'HTML' });
+    }
+  } finally {
+    await closeMcpClient(handle);
   }
 });
 

@@ -266,3 +266,105 @@ becomes painful. Idea:
 
 Don't implement this unless cherry-pick friction becomes > ~30 min per sync.
 Current single-machine dev + single-VPS demo doesn't justify the complexity.
+
+## Runtime: mcode exec vs TUI
+
+Two ways to run mcode, with different capabilities:
+
+| Mode | Command | MCP tools loaded? | When to use |
+|---|---|---|---|
+| **TUI** (interactive) | `mcode` (no args) | ✅ yes (`/mcp` lists them) | Long sessions, multi-step work, MCP-driven tasks |
+| **exec** (one-shot) | `mcode exec --cwd <path> "<task>"` | ❌ **no** | Short automated tasks, bot/CLI integration |
+
+**Why exec doesn't load MCP**: exec is a fast path for one-shot prompts.
+The runtime doesn't spawn the stdio child for MCP servers — only TUI does.
+This is an architectural decision in mcode, not a config issue.
+
+**What exec can still do** (covers the workflow):
+
+- `read` / `write` / `edit` / `glob` / `grep` — files
+- `bash` — `mv`, `curl`, `node`, `python`, `git`, anything
+- `web_fetch` / `web_search` — HTTP
+- Skills (`skill` tool) — gobsmooch-comic-generator, mcode-tools, etc.
+- Markdown/PDF/PPTX renderers from `mcode-tools`
+
+**What exec cannot do**:
+
+- Direct `mcp__comic-studio__*` tool calls (approve, render, restyle, etc.)
+- These exist in `mcp-server/index.js` but are not registered in exec's tool table.
+
+**Workaround used by the Telegram bot (`/mcode <task>` command)**:
+
+The agent in exec mode drives the comic-studio via **filesystem + bash + curl**:
+
+| Intent | How exec does it |
+|---|---|
+| List draft scenarios | `ls data/scenarios/draft/` |
+| Read scenario `<id>` | `read data/scenarios/draft/<id>.json` |
+| Approve scenario `<id>` | `mv data/scenarios/draft/<id>.json data/scenarios/approved/` |
+| Render scenario `<id>` | `curl -X POST http://127.0.0.1:3000/api/scenarios/<id>/render` |
+| List published comics | `ls data/comics/*.html` |
+| Inspect a comic | `read data/comics/<id>.html` (HTML render) or `read data/comics/<id>.png` |
+| Restyle comic | `curl -X POST http://127.0.0.1:3000/api/scenarios/<id>/restyle -d '{"style":"bubble"}' -H 'Content-Type: application/json'` |
+
+**This is the intended path**, not a workaround. The MCP tools are a
+convenience over the same operations; exec goes through the underlying
+primitives (files + HTTP API) directly. Result is identical.
+
+**If you need MCP-style calls from exec anyway**: spawn a long-lived
+TUI session and pipe `mcode` interactively. Not recommended for
+automation (fragile, no clean exit, blocking).
+
+**mcode acp** (Agent Client Protocol, `mcode acp`) is a server, not a
+client — not useful for triggering exec tasks from another process.
+
+## Telegram bot MCP integration (`tg-bot/`)
+
+The bot has its own MCP client (`tg-bot/mcp-client.js`) that spawns the
+comic-studio MCP server via stdio and calls tools directly. This is
+**independent of mcode** and gives the bot full MCP power without the
+exec limitation.
+
+### Bot commands
+
+| Command | Backend | When to use |
+|---|---|---|
+| `/mcp_list` | Direct MCP via `mcp-client.js` | See all 10 available tools |
+| `/mcp <tool> [json-args]` | Direct MCP via `mcp-client.js` | Typed operations, no LLM in loop |
+| `/mcode <task>` | `mcode exec` (filesystem + bash) | Freeform tasks that need LLM reasoning |
+
+### Why both `/mcp` and `/mcode`?
+
+- **`/mcp`** is fast, deterministic, and uses the canonical MCP tool
+  surface. Use it for `approve`, `render`, `restyle`, `list_scenarios`,
+  `resolve_intent`, etc. — anything that's a single typed operation.
+- **`/mcode`** is for tasks that require reasoning: "create a scenario
+  about X", "explain the lifecycle", "refactor script Y to use new
+  env var". Agent works through filesystem + bash + curl.
+- **Combined:** `/mcp resolve_intent "ssh"` returns scenario IDs, then
+  `/mcode "explain what's interesting about scenario abc"` reasons
+  about it. Or `/mcode "list pending approvals and remind me to review"`
+  — agent lists via filesystem, suggests via LLM.
+
+### Why not just put MCP in `mcode` exec?
+
+Because exec is a fast-path one-shot and doesn't spawn MCP stdio
+transports. The bot's MCP client bypasses this by spawning its own
+connection per command. The cost: a small process start per call
+(~200 ms), in exchange for full tool access.
+
+### Example flow
+
+```
+/mcp_list
+  → 10 tools listed
+
+/mcp list_scenarios {"status": "draft"}
+  → {"items": [], "invalid_count": 0, ...}
+
+/mcp approve_scenario {"id": "abc12345"}
+  → {"ok": true, "scenario_id": "abc12345", ...}
+
+/mcode list published comics
+  → reads data/comics/*.html, returns formatted list
+```
