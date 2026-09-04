@@ -181,3 +181,63 @@ for the highest existing number. Templates live in
 
 For pi agent: see `.pi/skills/fixation/SKILL.md`. For mcode (Mavis / M3):
 read this section and `FIXATION.md` end-to-end before starting.
+
+## Branch workflow
+
+Two long-lived branches, both rooted at the same ancestor:
+
+| Branch | Environment | Purpose |
+|---|---|---|
+| `main` | Local Mac Studio | Dev / R&D. Full features. All commits land here first. |
+| `demo-production` | VPS Oracle (minimal, ~1 GB RAM) | Demo. Stubs for heavy ML deps (Whisper, yt-dlp). Lighter web. |
+
+**When to cherry-pick `main` → `demo-production`:** when the commit is
+**docs / workflow only** — does not touch runtime code or heavy deps.
+Specifically:
+
+- `AGENTS.md`, `CLAUDE.md`, `FIXATION.md`, `README.md`, `CHANGELOG.md` — always
+- `summary/**` (renames, audits, tasks, templates) — always
+- `openspec/**` — always
+- `py/**`, `web/**`, `tg-bot/**`, `mcp-server/**`, `scripts/**`, `publisher/**` —
+  **do NOT cherry-pick** unless the change is explicitly intended for demo
+  (e.g. another `stub:` commit on demo-production).
+- `py/requirements.txt`, `package*.json` — **do NOT cherry-pick**, these are
+  runtime deps that demo has stubbed.
+
+### Cherry-pick procedure
+
+After a successful fix-commit on `main` and `git push origin main`:
+
+```sh
+git fetch origin
+git checkout demo-production
+git cherry-pick <main-commit-sha>
+# resolve conflicts if any (most common: source files don't exist on demo,
+# so DU conflicts on renamed files — keep the destination with `git add`,
+# source was never there to delete)
+GIT_EDITOR=true git cherry-pick --continue
+git push origin demo-production
+git checkout main
+```
+
+In the CHANGELOG entry on `main`, note explicitly: «cherry-picked to
+`demo-production` as `<short-sha>»» so the history is traceable.
+
+If conflicts are non-trivial (e.g. demo's stubs conflict with main's
+implementation), do not force-cherry-pick — fix demo separately or open
+an issue. Doc-only commits are safe; code commits are not.
+
+## Future consideration: Variant D (NOT IMPLEMENTED)
+
+Reserved for the case where demo and main drift too much and cherry-pick
+becomes painful. Idea:
+
+- Make `demo-production` a **feature branch off `main`**, not a sibling.
+- Demo files live in `demo/` overlay (e.g. `demo/py/stubs/`, `demo/requirements.txt`)
+  and are merged on top of main via `git checkout demo-production && git rebase main`.
+- Cherry-pick becomes automatic (rebase carries everything forward, demo
+  overlay stays put).
+- Trade-off: makes demo's structure more complex (two parallel file trees).
+
+Don't implement this unless cherry-pick friction becomes > ~30 min per sync.
+Current single-machine dev + single-VPS demo doesn't justify the complexity.
