@@ -65,3 +65,19 @@
 - `2026-08-04T11:00:21+03:00` — Added fast restyle capabilities to UI and MCP for instant caption updates without MiniMax rendering; fixed 409 UI bugs and legacy staging cleanup crash.
 
 - `2026-08-04T11:26:32+03:00` — Added UI Publish button, mobile responsive layout (media queries for <768px), and an internal HTML/PNG viewer with a 'Back' button for seamless navigation.
+
+- `2026-08-04T11:38:37+03:00` — Created `DEMOPRODACTION.md` guide and `demo-production` Git branch with mocked heavy ML dependencies (Whisper, yt-dlp) for seamless deployment on minimal 1GB RAM servers.
+- `2026-08-08T07:14:26Z` — Унифицирована конфигурация портов (Ports Standardization). Порт `3000` утвержден как единый fallback по умолчанию. Обновлен `mcp-server/index.js` (убран хардкод 3300), из `tg-bot/bot.js` вычищены хардкоды `127.0.0.1:3000` в справочных сообщениях (используются `WEB_API_URL` и `WEB_PUBLIC_URL`), обновлен `.env.example`.
+
+## 2026-08-27
+
+- `2026-08-27T22:48:41+03:00` — Подключен **LM Studio как провайдер** для Hermes (`lmstudio-provider-setup`). Закрыт TODO #11 из аудита 020: `py/scenario/style_writer.py` больше не содержит хардкодов — все три параметра (URL/token/model) читаются из env (`LM_BASE_URL`/`LM_API_KEY`/`LM_MODEL`) с backward-compat fallback. В `~/.hermes/config.yaml` через `hermes config set` добавлены `providers.lmstudio` (base_url `http://127.0.0.1:1234/v1`, request_format=openai, context_window=32768) и `models.magnum-picaro` (provider=lmstudio, alias=magnum). В `~/.hermes/.env` `LM_BASE_URL` сменён с `192.168.50.250:1234` на `127.0.0.1:1234` (localhost не триггерит Hermes network guard). Verification: `curl http://127.0.0.1:1234/v1/models` с токеном → 200, 15 моделей в списке включая Magnum-Picaro-12B (7.12 GB loaded); `hermes config get providers.lmstudio` и `models.magnum-picaro` показывают все 4 ключа каждый, alias `magnum` резолвится в TUI. Audit: `summary/audit/022_lmstudio-provider-setup.md`. Tasks: `summary/tasks/022_lmstudio-provider-setup.md`. OpenSpec change не создавался — изменение конфигурации, не API surface.
+
+## 2026-09-04
+
+- `2026-09-04T22:30:00+03:00` — Приведение в порядок `summary/` и `openspec/` (cherry-pick с `main` в `demo-production`):
+  - **`FIXATION.md`**: добавлена секция «Для mcode / Mavis агента» рядом с существующей «Для pi агента» — формат-эталон, conventional commit, напоминание про `web/server.js`. pi-секция сохранена.
+  - **`AGENTS.md`**: добавлен файл целиком (на demo раньше не было) с секциями Setup, Run, Project layout, Code style, Testing, Project invariants, Logging, Security, PR conventions, Extension points, Project status, Image gen provider, Censorship-sensitive content, Series workflow, Fixation procedure, Branch workflow.
+  - **Созданы `summary/tasks/_TEMPLATE.md` и `summary/audit/_TEMPLATE.md`** — эталон формата на основе `022_lmstudio-provider-setup.md`.
+  - **Созданы `summary/audit/023_demo_production_setup.md` и `summary/audit/024_ports_audit_and_standardization.md`** (и `summary/tasks/023_*` / `024_*`) — на demo эти файлы ранее отсутствовали, теперь присутствуют.
+  - **Format audit (22 файла)**: `022_*` = 9/9 (эталон), `020-021_*` = 5-7/9, `001-019_*` = 1-3/9 (исторический drift формата; **архивные файлы не правились** — переписывать прошлое дороже, чем задокументировать настоящее). Шаблон покроет будущее.

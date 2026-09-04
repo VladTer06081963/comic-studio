@@ -96,6 +96,25 @@ git push  # если есть remote
 
 Есть скилл: `.pi/skills/fixation/SKILL.md`
 
+## Для mcode / Mavis агента
+
+`mcode` запускается в `~/Projects/comic-studio/`. Mavis (M3 по умолчанию)
+получает тот же триггер «фиксация» / «фиксация» / «зафиксируй» и должен
+**сам** выполнить 5 шагов выше. Дополнительно:
+
+- Перед шагом 3 прочитай `summary/tasks/022_lmstudio-provider-setup.md`
+  как эталон формата (полный набор секций: `Зависимости`, `Как использовать`,
+  `Env variables`, `Файлы`, `Связанные`, `Следующие задачи`).
+- При шаге 5 `git commit` используй conventional commit message
+  (`feat:` / `fix:` / `docs:` / `refactor:` / `chore:` / `test:`),
+  как требует `AGENTS.md` § PR conventions.
+- В TUI команды mcode для проверки:
+  - `mcode --version` — sanity
+  - `mavis agent list` (через меня) — какие агенты есть
+  - `/status` в TUI — статус MCP
+- Если `web/server.js` не запущен и фиксация требует его упоминания,
+  напомни пользователю: `cd ~/Projects/comic-studio && node web/server.js &`.
+
 ## Для других агентов
 
 Читай этот файл или раздел **Фиксация задач** в `CLAUDE.md`.
