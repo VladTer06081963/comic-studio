@@ -34,6 +34,30 @@ const MCODE_CWD = process.env.MCODE_CWD || PROJECT_ROOT;
 // Default timeout для /mcode: 10 минут.
 const MCODE_TIMEOUT_MS = Number(process.env.MCODE_TIMEOUT_MS || 10 * 60 * 1000);
 
+// Global safety net: Telegram API errors (особенно `answerCbQuery` для
+// устаревших callback'ов с id старше ~30 сек) приходят как rejected
+// promises. Без этого handler'а process.exit'ит на unhandledRejection.
+// Особенно актуально во время долгих рендеров (Draw Things 1-3 мин):
+// пока render идёт, user может нажать кнопку, callback истечёт, и любой
+// последующий answerCbQuery упадёт с 400 "query is too old".
+process.on('unhandledRejection', (reason) => {
+  const msg = reason?.response?.description || reason?.message || String(reason);
+  // Старые callback'и — ожидаемая ситуация, не ошибка приложения.
+  if (/query is too old|callback.*timeout/i.test(msg)) {
+    console.warn(`[tg-bot] Stale callback ignored: ${msg}`);
+    return;
+  }
+  console.error('[tg-bot] Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  const msg = err?.message || String(err);
+  if (/query is too old|callback.*timeout/i.test(msg)) {
+    console.warn(`[tg-bot] Stale callback in uncaught: ${msg}`);
+    return;
+  }
+  console.error('[tg-bot] Uncaught exception:', err);
+});
+
 if (!BOT_TOKEN) {
   console.error('❌ TELEGRAM_BOT_TOKEN not set in .env');
   process.exit(1);

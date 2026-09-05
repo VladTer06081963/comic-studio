@@ -279,3 +279,13 @@
 - `tests/test_render_approved.py` — 6/6 OK (включая 2 новых: `test_rerender_promotes_html_and_pages_from_staging`, `test_failed_rerender_rollback_restores_old_html`).
 - Тесты до этого были silently broken (patched `generate_image` который не существует после `4117b80`) — переведены на `minimax_generate_image` + `drawthings_generate_image` + `assemble_pages` + `render_reader` + `synthesize_panel_dialogue` через `ExitStack`.
 - Полный suite: 186/186 OK (0 failures, 0 errors).
+
+## 2026-09-05T22:51Z — fix(tg-bot): global error handler для stale Telegram callback
+
+**Симптом**: бот падает с `TelegramError: 400: Bad Request: query is too old and response timeout expired or query ID is invalid` и unhandledRejection убивает процесс.
+
+**Root cause**: во время долгого Draw Things рендера (1-3 мин) user мог нажать кнопку, callback истекал (Telegram TTL ~30 сек), и любой последующий `ctx.answerCbQuery(text)` падал с 400. Без global handler'а `unhandledRejection` завершал процесс.
+
+**Fix**: `tg-bot/bot.js` — `process.on('unhandledRejection', ...)` и `process.on('uncaughtException', ...)` ловят stale-callback ошибки и логируют как warning (`[tg-bot] Stale callback ignored: ...`), не падая. Реальные ошибки (другие rejection/exception) по-прежнему пробрасываются в console.error.
+
+**Tests**: `tg-bot/tests/stale_callback.test.js` — новый тест мокает `bot.telegram.callApi` чтобы `answerCallbackQuery` бросал 400, проверяет что process не падает (watchdog ловит только non-stale ошибки). 32/32 tg-bot тестов OK.
