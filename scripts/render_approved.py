@@ -18,9 +18,62 @@ from py.lib.config import comics_dir, data_dir, scenarios_dir
 from py.lib.lifecycle import mark_rendered, update_in_place, validate_approved
 from py.lib.logging_setup import setup
 from py.render.comic_assembler import assemble_comic
-from py.render.minimax_client import encode_image_b64, generate_image
+from py.render.minimax_client import encode_image_b64, generate_image as minimax_generate_image
+from py.render.drawthings_client import generate_image as drawthings_generate_image
+from py.scenario.provider_router import (
+    pick_image_provider,
+    try_with_fallback,
+    mark_fallback,
+)
+from py.render.page_assembler import assemble_pages
+from py.render.voice_synth import synthesize_panel_dialogue
+from py.render.html_renderer.reader import render_reader
 
 logger = setup("scripts.render_approved")
+
+
+def _render_single_panel(
+    prompt: str,
+    output_path: Path,
+    aspect_ratio: str,
+    seed: int | None,
+    lora: str | None,
+    reference_b64: str | None,
+    image_provider: str,
+) -> Path:
+    """Рендерит одну панель через выбранный image-провайдер.
+
+    Draw Things не поддерживает `subject_reference_b64` (это MiniMax-специфика).
+    Для Draw Things character consistency держится через фиксированный seed +
+    LoRA (например stalker_sdxl_lora_f16.ckpt).
+    """
+    if image_provider == "drawthings":
+        def primary_fn(p, op, ar, s, lora=None):
+            return drawthings_generate_image(
+                prompt=p, output_path=op, aspect_ratio=ar, seed=s, lora=lora,
+            )
+        def fallback_fn(p, op, ar, s, _lora):
+            return minimax_generate_image(
+                prompt=p, output_path=op, aspect_ratio=ar, seed=s,
+                subject_reference_b64=reference_b64,
+            )
+        path, _used, _fb = try_with_fallback(
+            primary_fn,
+            fallback_fn,
+            "drawthings",
+            "minimax",
+            prompt, output_path, aspect_ratio, seed, lora,
+        )
+        return path
+    else:
+        # MiniMax primary (default, backward-compat)
+        return minimax_generate_image(
+            prompt=prompt,
+            output_path=output_path,
+            aspect_ratio=aspect_ratio,
+            seed=seed,
+            subject_reference_b64=reference_b64,
+        )
 
 
 def _load_for_mode(scenario_id: str, mode: str) -> dict | None:
@@ -48,6 +101,7 @@ def _generate_candidate(
     *,
     mode: str,
     seed: int | None,
+    image_provider_override: str | None = None,
 ) -> tuple[Path, list[Path]]:
     sid = scenario["id"]
     panels = scenario.get("panels")
@@ -55,6 +109,14 @@ def _generate_candidate(
         raise ValueError(f"{sid}: scenario has no panels")
     panel_root.mkdir(parents=True, exist_ok=True)
     final_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Pick image provider: CLI override > scenario.json > genre > env > minimax
+    image_provider = pick_image_provider(scenario, image_provider_override)
+    # LoRA берётся из scenario (для Draw Things) или None (для MiniMax)
+    lora = scenario.get("render_lora")
+    logger.info(
+        f"Render provider: {image_provider}, lora={lora or '(none)'}, seed={seed}"
+    )
 
     def render_panel(panel: dict, reference_b64: Optional[str] = None) -> tuple[int, Path]:
         panel_path = panel_root / f"panel_{panel['n']}.png"
@@ -64,12 +126,14 @@ def _generate_candidate(
             return panel["n"], panel_path
         if mode == "initial" and validate_approved(sid) is None:
             raise RuntimeError(f"{sid}: approval gate failed immediately before provider request")
-        generate_image(
+        _render_single_panel(
             prompt=panel["prompt"],
             output_path=panel_path,
             aspect_ratio=scenario.get("aspect_ratio", "16:9"),
             seed=seed,
-            subject_reference_b64=reference_b64,
+            lora=lora,
+            reference_b64=reference_b64,
+            image_provider=image_provider,
         )
         _verify_png(panel_path)
         return panel["n"], panel_path
@@ -109,16 +173,83 @@ def _generate_candidate(
     panel_paths = [panel_paths_ordered[i] for i in range(len(panels))]
     for panel_path in panel_paths:
         _verify_png(panel_path)
+
+    # Phase 2: voice synthesis per panel (ComicsMCP.md)
+    audio_dir = panel_root / "audio"
+    if any(panel.get("dialogue") for panel in panels):
+        logger.info(f"Synthesizing audio for {sum(1 for p in panels if p.get('dialogue'))} panels with dialogue")
+        for index, panel in enumerate(panels):
+            if not panel.get("dialogue"):
+                continue
+            synth_results = synthesize_panel_dialogue(
+                scenario_id=sid,
+                panel_n=panel["n"],
+                dialogue=panel["dialogue"],
+                output_dir=audio_dir,
+            )
+            # Inline update: panel.audio = [{character, text, voice_id, path, duration_sec, ...}]
+            panel["audio"] = synth_results
+        # Persist updated scenario so rerender / inspection sees audio paths
+        # (lightweight: only when voice was actually generated)
+        scenario_path = scenarios_dir("approved") / f"{sid}.json"
+        if not scenario_path.exists():
+            scenario_path = scenarios_dir("rendered") / f"{sid}.json"
+        if scenario_path.exists():
+            try:
+                persisted = json.loads(scenario_path.read_text(encoding="utf-8"))
+                for orig_panel, rendered_panel in zip(persisted.get("panels", []), panels):
+                    if "audio" in rendered_panel:
+                        orig_panel["audio"] = rendered_panel["audio"]
+                scenario_path.write_text(
+                    json.dumps(persisted, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                logger.info(f"Persisted audio paths in {scenario_path}")
+            except Exception as e:
+                logger.warning(f"Could not persist audio paths: {e}")
+
     captions = [panel["caption"] for panel in panels]
+
+    # === Page-by-page assembly (openaiua.fr style) ===
+    # Генерируем pages/ + audio/ + pages.json
+    page_result = assemble_pages(
+        scenario=scenario,
+        panels_dir=comics_dir() / sid,
+        audio_dir=comics_dir() / sid / "audio",
+        output_dir=comics_dir() / sid,
+        generate_cover=True,
+        pause_ms=700,
+    )
+    logger.info(
+        f"Pages assembled: {len(page_result['pages'])} pages, "
+        f"cover={page_result['cover_path']}"
+    )
+
+    # === Composite PNG preview (через Pillow, как раньше) ===
     final = assemble_comic(
         panel_paths=panel_paths,
         captions=captions,
         output_path=final_path,
         style=scenario.get("style", "star"),
         layout=scenario.get("layout", "comic"),
-        scenario=scenario,  # включает генерацию layout.json и <id>.html (variant B)
+        scenario=scenario,
     )
     _verify_png(final)
+
+    # === Рендерим reader HTML (page-by-page) — ПОСЛЕДНИМ, чтобы не перетёрся Pillow ===
+    # base_path='/comics/<id>' → абсолютные URL, работают откуда угодно
+    final_html = render_reader(
+        pages_manifest=page_result["pages"],
+        output_path=final_path.with_suffix(".html"),
+        title=scenario.get("title", "Комикс"),
+        comic_id=sid,
+        language=scenario.get("language", "ru"),
+        tone=scenario.get("tone", "dark"),
+        style=scenario.get("style", "star"),
+        base_path=f"/comics/{sid}",
+    )
+    logger.info(f"Reader HTML → {final_html}")
+
     return final, panel_paths
 
 
@@ -191,6 +322,7 @@ def render_one(
     mode: str = "initial",
     staging_root: Path | None = None,
     seed_override: int | None = None,
+    image_provider_override: str | None = None,
 ) -> tuple[Path, int]:
     sid = scenario["id"]
     seed = seed_override if seed_override is not None else scenario.get("seed")
@@ -204,6 +336,7 @@ def render_one(
             comics_dir() / f"{sid}.png",
             mode=mode,
             seed=seed,
+            image_provider_override=image_provider_override,
         )
         raw_dir = comics_dir() / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
@@ -227,6 +360,7 @@ def render_one(
         candidate_root / f"{sid}.png",
         mode=mode,
         seed=seed,
+        image_provider_override=image_provider_override,
     )
     return _promote_rerender(scenario, candidate_final, candidate_root / sid, staging_root, seed)
 
@@ -253,6 +387,10 @@ def main() -> int:
     parser.add_argument("--rerender", action="store_true", help="Явный rerender scenario в rendered")
     parser.add_argument("--staging-dir", help="Job-specific directory внутри data/.staging")
     parser.add_argument("--seed", type=int, help="Seed override для explicit render/rerender")
+    parser.add_argument("--image-provider", choices=["minimax", "drawthings"],
+                        help="Override image provider (default: from scenario.json или genre-table)")
+    parser.add_argument("--text-provider", choices=["minimax", "lmstudio"],
+                        help="Override text provider (для будущего использования в scenario generation)")
     parser.add_argument("--json-result", action="store_true", help="Вывести machine-readable result последней строкой")
     args = parser.parse_args()
 
@@ -300,6 +438,7 @@ def main() -> int:
                 mode=mode,
                 staging_root=scenario_staging,
                 seed_override=args.seed,
+                image_provider_override=args.image_provider,
             )
             rendered.append({"id": sid, "comic_path": str(final), "render_revision": revision})
             logger.info(f"✅ {sid} rendered successfully")

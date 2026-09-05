@@ -117,25 +117,31 @@ production-grade answers unless explicitly asked.
 
 ## Image gen provider
 
-- **Current:** `minimax` (cloud) via `py/render/minimax_client.py`.
-- Единственный image-провайдер в main. Draw Things **не** интегрирован
-  в рендер-пайплайн, `/provider` команда в Telegram-боте удалена (см.
-  `summary/audit/026_remove-draw-things-orchestrator.md`).
-- Если/когда понадобится второй провайдер — это отдельный change со своим
-  OpenSpec, со своим client-модулем, пробрасыванием `provider` через
-  `mcp-server` → web API → render scripts и явным `render_provider` в
-  scenario JSON (см. `summary/tasks/026` → F1).
+- **Default:** `minimax` (cloud) via `py/render/minimax_client.py`.
+- **Local uncensored:** `drawthings` (Draw Things + LoRA) via `py/render/drawthings_client.py`.
+- **Выбор** — `py/scenario/provider_router.py::pick_image_provider(scenario, override)`:
+  1. CLI override (`--image-provider` в `scripts/render_approved.py`)
+  2. `scenario["image_provider"]` (per-scenario)
+  3. `scenario["genre"]` → `GENRE_DEFAULT` (stalker/military/horror → drawthings; comedy/kids/sci-fi → minimax)
+  4. env `DEFAULT_IMAGE_PROVIDER` (default `minimax`)
+- **Auto-fallback**: если Draw Things упал (WireGuard down, model не загружен) →
+  MiniMax для картинок. Scenario помечается `image_provider_fallback: "minimax"`.
+- Полная документация: `summary/audit/027_local-uncensored-stack.md` и
+  `openspec/changes/local-uncensored-stack/`.
 
 ## Censorship-sensitive content
 
-For Stalker / military / horror scenarios, prefer **local models** (LM Studio
-at `http://192.168.55.1:1234` over WireGuard) over MiniMax M-series or
-Anthropic. Magnum-picaro and other uncensored local models handle the
-creative space without refusals.
+**`provider_router` сам выбирает провайдеров по жанру**:
 
-The revision pipeline handles this transparently: scenarios can be generated
-locally, render via Draw Things, publish normally. The miniMax cloud path
-stays available for neutral content where its quality is wanted.
+- `stalker-horror`, `military`, `horror` → text=LM Studio (Magnum), image=Draw Things (с LoRA)
+- `comedy`, `kids`, `educational`, `sci-fi` → text=minimax, image=minimax
+- `default` → minimax, minimax (последний рубеж)
+
+Override per-scenario: `text_provider` / `image_provider` поля в JSON.
+Override per-run: `--text-provider` / `--image-provider` в `scripts/render_approved.py`.
+
+Если локалка недоступна (WireGuard down, модель не загружена) — auto-fallback на
+MiniMax с пометкой `*_provider_fallback: "minimax"` в scenario JSON.
 
 ## Series workflow (open problem)
 

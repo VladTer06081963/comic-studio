@@ -35,7 +35,14 @@ SYSTEM_PROMPT = """Ты креативный сценарист коротких
 ПРАВИЛА:
 - 3 или 4 панели (не больше, не меньше).
 - Каждая панель — конкретная визуальная сцена, описанная как кинематографист.
+- **ВСЁ НА РУССКОМ ЯЗЫКЕ:** подписи (captions), реплики персонажей (dialogue), названия.
+  КРОМЕ prompt (описание для image gen) — он на английском.
 - **ПОДПИСИ (captions) — ТОЛЬКО НА РУССКОМ ЯЗЫКЕ.** Краткие, дерзкие, ≤6 слов.
+- **РЕПЛИКИ (dialogue)** — голосовая озвучка панели. Может быть 0+ реплик на панель:
+  - narrator: закадровый голос, описывает обстановку
+  - named character: реплика конкретного персонажа (дед, сталкер, мальчик, и т.п.)
+  - Каждая реплика: короткая фраза ≤15 слов на русском, в характере персонажа.
+  - Если панель визуально немая (пейзаж, без людей) — dialogue пустой [].
 - Стиль подписей: по умолчанию 'star' (взрыв-POW!), можно 'bubble', 'gothic', 'boom', 'memo', 'bar'.
 - Если контекст серьёзный — tone='epic'. Если юмор — tone='funny'. Если обучение — tone='educational'.
 - Верни СТРОГО JSON без markdown-обёртки.
@@ -43,14 +50,29 @@ SYSTEM_PROMPT = """Ты креативный сценарист коротких
 Формат ответа:
 {
   "title": "Название комикса",
+  "language": "ru",
   "tone": "epic|funny|educational|dark|whimsical",
   "style": "star|bubble|gothic|boom|memo|bar",
   "layout": "comic|grid",
   "aspect_ratio": "16:9",
   "panels": [
-    {"n": 1, "prompt": "детальное визуальное описание сцены на английском, ≤1500 chars", "caption": "подпись на РУССКОМ, ≤6 слов"},
-    {"n": 2, "prompt": "...", "caption": "..."},
-    {"n": 3, "prompt": "...", "caption": "..."}
+    {
+      "n": 1,
+      "prompt": "detailed visual scene description in English, ≤1500 chars",
+      "caption": "краткая подпись на русском, ≤6 слов",
+      "dialogue": [
+        {"character": "narrator", "text": "озвучка от нарратора на русском, ≤15 слов"}
+      ]
+    },
+    {
+      "n": 2,
+      "prompt": "...",
+      "caption": "...",
+      "dialogue": [
+        {"character": "дед", "text": "реплика деда на русском"},
+        {"character": "мальчик", "text": "ответ мальчика"}
+      ]
+    }
   ]
 }
 """
@@ -137,8 +159,21 @@ def generate_scenario(
     style: Optional[str] = None,
     image_style: Optional[str] = None,
     num_panels: int = 3,
+    author_style: Optional[str] = None,
+    text_provider: Optional[str] = None,
 ) -> dict:
     """Генерирует сценарий комикса из текстового контекста.
+
+    Двухэтапный pipeline (ComicsMCP.md Phase 2 creative toolkit):
+
+    Этап 1 (`author_style`): Magnum-Picaro пишет narrative (prose + dialogue)
+           в стиле автора (pelevin, strugatsky, dovlatov, king, ...).
+           Если `author_style=None` или Magnum недоступен — пропускаем.
+
+    Этап 2 (всегда): выбранный text-провайдер превращает narrative в строгий JSON:
+           English prompts, Russian captions ≤6 слов, dialogue arrays.
+           По умолчанию MiniMax-Text-01, но `text_provider="lmstudio"` переключает
+           на LM Studio + Magnum-Picaro (для uncensored-жанров).
 
     Args:
         context: Текстовый контекст для сценария
@@ -146,6 +181,9 @@ def generate_scenario(
         style: Стиль подписей (star, bubble, gothic, boom, memo, bar)
         image_style: Стиль изображений (cartoon, anime, comic, realistic, watercolor)
         num_panels: Количество панелей
+        author_style: ID author style для Magnum (None = только MiniMax)
+        text_provider: 'lmstudio' | 'minimax' | None (None = env DEFAULT_TEXT_PROVIDER
+                       или 'minimax').
 
     Returns:
         dict со всеми полями сценария + id, created_at, status, source
@@ -154,44 +192,101 @@ def generate_scenario(
     bounded = context[:MAX_CONTEXT_CHARS]
     if len(context) > MAX_CONTEXT_CHARS:
         logger.info(f"Context {len(context)} chars exceeds {MAX_CONTEXT_CHARS}, truncating to {MAX_CONTEXT_CHARS}")
-    
-    user_msg = (
-        f"Контекст:\n\n{bounded}\n\n"
-        f"Требования: {num_panels} панели."
-        + (f" Тон: {tone}." if tone else "")
-        + (f" Стиль подписей: {style}." if style else "")
-        + (f" Стиль картинок: {image_style}." if image_style else "")
-    )
 
-    logger.info(f"Generating scenario ({num_panels} panels, {len(context)} chars context)")
-    raw = _call_minimax_chat(SYSTEM_PROMPT, user_msg)
-    scenario = _extract_json(raw)
+    tone = tone or "dark"
+    style = style or "star"
+    image_style = image_style or "comic"
+
+    narrative_text = None
+    if author_style:
+        # === Этап 1: Magnum-Picaro пишет narrative в стиле автора ===
+        try:
+            from py.scenario.style_writer import write_narrative
+            logger.info(f"Stage 1: Magnum-Picaro ({author_style}) writing narrative")
+            result = write_narrative(
+                context=bounded,
+                style=author_style,
+                tone=tone,
+                num_scenes=num_panels,
+            )
+            narrative_text = result["narrative"]
+            logger.info(
+                f"Stage 1 done: {result['elapsed_sec']}s, {len(narrative_text)} chars, "
+                f"model={result['model']}"
+            )
+        except Exception as e:
+            logger.warning(f"Stage 1 (Magnum) failed, falling back to direct MiniMax: {e}")
+            narrative_text = None
+
+    if narrative_text:
+        # === Этап 2a: text-провайдер извлекает структуру из narrative ===
+        from py.scenario.provider_router import pick_text_provider, try_with_fallback, mark_fallback
+        chosen_text_provider = text_provider or pick_text_provider({"genre": tone})
+        logger.info(f"Stage 2a: {chosen_text_provider} extracting structure from narrative")
+        from py.scenario.structure_extractor import extract_panels
+        scenario = extract_panels(
+            narrative=narrative_text,
+            tone=tone,
+            style=style,
+            image_style=image_style,
+            title_hint=None,
+        )
+        # Сохраняем narrative для аудита и возможного re-render
+        scenario["narrative"] = narrative_text
+        scenario["author_style"] = author_style
+    else:
+        # === Этап 2b: text-провайдер генерирует сценарий напрямую (legacy режим) ===
+        from py.scenario.provider_router import pick_text_provider, try_with_fallback, mark_fallback
+        from py.scenario.lmstudio_client import _call_lmstudio_chat, LMRuntimeError as _LMErr
+        chosen_text_provider = text_provider or pick_text_provider({"genre": tone})
+        logger.info(f"Direct {chosen_text_provider} generation (no Magnum narrative)")
+        user_msg = (
+            f"Контекст:\n\n{bounded}\n\n"
+            f"Требования: {num_panels} панели."
+            f" Тон: {tone}."
+            f" Стиль подписей: {style}."
+            f" Стиль картинок: {image_style}."
+        )
+        primary_fn = _call_lmstudio_chat if chosen_text_provider == "lmstudio" else _call_minimax_chat
+        result, used_provider, fallback_used = try_with_fallback(
+            primary_fn=primary_fn,
+            fallback_fn=_call_minimax_chat,
+            primary_provider=chosen_text_provider,
+            fallback_provider="minimax",
+            SYSTEM_PROMPT, user_msg,
+        )
+        raw = result
+        scenario = _extract_json(raw)
+        if fallback_used:
+            # Помечаем сценарий для audit (mark_fallback работает in-place)
+            mark_fallback(scenario, "text", used_provider)
 
     # Обогащаем метаданными
     scenario["id"] = str(uuid.uuid4())[:8]
     scenario["created_at"] = datetime.now().isoformat()
     scenario["status"] = "draft"
     scenario["source"] = "context"
-    scenario["context"] = context[:2000]  # хранить первые 2k как превью
+    scenario["context"] = context[:2000]
 
-    # Дефолты
-    scenario.setdefault("tone", tone or "epic")
-    scenario.setdefault("style", style or "star")
-    scenario.setdefault("image_style", image_style or "comic")
+    scenario.setdefault("tone", tone)
+    scenario.setdefault("style", style)
+    scenario.setdefault("image_style", image_style)
     scenario.setdefault("layout", "comic")
     scenario.setdefault("aspect_ratio", "16:9")
 
-    # Добавляем стиль к промптам панелей
+    # Добавляем стиль к промптам панелей (если ещё не добавлен)
     style_suffix = STYLE_TEMPLATES.get(scenario["image_style"], STYLE_TEMPLATES["comic"])
     for panel in scenario.get("panels", []):
-        if "prompt" in panel:
+        if "prompt" in panel and style_suffix not in panel["prompt"]:
             panel["prompt"] = f"{panel['prompt']}, {style_suffix}"
 
-    # Проверка структуры
     if not isinstance(scenario.get("panels"), list) or not scenario["panels"]:
         raise ValueError(f"Invalid scenario structure: {scenario}")
 
-    logger.info(f"Generated scenario id={scenario['id']} title={scenario['title']!r}, image_style={scenario['image_style']}")
+    logger.info(
+        f"Generated scenario id={scenario['id']} title={scenario['title']!r}, "
+        f"author_style={scenario.get('author_style')}, image_style={scenario['image_style']}"
+    )
     return scenario
 
 
