@@ -214,3 +214,15 @@
   - **`tests/test_provider_router.py`**: +7 тестов (total 34): tone=dark → lmstudio+drawthings, tone=funny → minimax, tone=epic → lmstudio+drawthings, tone=unknown → minimax, genre>tone приоритет, explicit_provider>tone+genre.
   - **Теперь работает через Telegram**: бот выбирает `tone` через inline-кнопки (epic/funny/educational/dark/whimsical) → router сам триггерит `stalker-horror` для `tone=dark` → Draw Things + Magnum. **Override `/render <id> drawthings lmstudio` больше не нужен** для типичных Stalker-сценариев.
   - **Verification**: 114/114 Python (62+19+27+6 новых), 19/19 tg-bot — все OK.
+- `2026-09-06T00:05:00+03:00` — **feat(tg-bot): render button с inline-выбором провайдера**. Возвращает кнопки, которых не хватало после фиксации 026.
+  - **Что было**: в `sendScenarioView` (line 194, 200) была кнопка `🎨 Запустить рендер` (callback `render:<id>`) — но жёстко вызывала `render_approved.py` без override провайдера, всегда MiniMax. Кнопка `/provider` (отдельный свитчер с inline-меню) была удалена в `20d05d8` как UI-иллюзия.
+  - **Что сейчас**: 3 inline-кнопки для сценариев в статусе `approved` И `rendered`:
+    - 🎨 Рендер (auto) → `render:auto:auto:<id>` — провайдеры из scenario.json / router (TONE_TO_GENRE работает для dark → DT+Magnum автоматически)
+    - 🟧 Local stack (DT+Magnum) → `render:drawthings:lmstudio:<id>` — uncensored
+    - ☁️ MiniMax cloud → `render:minimax:minimax:<id>` — облако с цензурой
+  - **`bot.action(/^render:(auto|minimax|drawthings):(auto|minimax|lmstudio):(.+)$/)`**: новый regex с явным enum'ом. Передаёт `--image-provider` и `--text-provider` в `render_approved.py`. Старый regex (без provider) удалён.
+  - **`/help`** обновлён: «В карточке сценария три inline-кнопки».
+  - **`tg-bot/tests/render_button.test.js`** (NEW, 5 тестов): Local stack кнопка пробрасывает image=drawthings + text=lmstudio; MiniMax cloud — оба minimax; auto — без флагов (router decides); invalid format ignored; non-approved scenario → alert.
+  - **В `global.isTestEnv` execAsync skip** — иначе subprocess держит event loop и test runner не закрывается (как было в /render command ранее).
+  - **Usage**: `/view <id>` для approved сценария → 3 кнопки рендера появляются. Один клик — рендер.
+  - **Verification**: 26/26 tg-bot (5 новых + 10 render + 5 revision + 4 helpers + 2 от lint), 114/114 Python — **140/140 OK**.

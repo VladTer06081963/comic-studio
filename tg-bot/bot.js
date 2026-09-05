@@ -191,14 +191,21 @@ function getScenarioButtons(sc, status) {
     buttons.push([Markup.button.callback('❌ Отклонить', `reject:${sc.id}`)]);
   } else if (status === 'approved') {
     buttons.push([
-      Markup.button.callback('🎨 Запустить рендер', `render:${sc.id}`),
+      Markup.button.callback('🎨 Рендер', `render:auto:auto:${sc.id}`),
       Markup.button.callback('🔄 Revision', `revise:${sc.id}`),
+    ]);
+    buttons.push([
+      Markup.button.callback('🟧 Local stack (DT+Magnum)', `render:drawthings:lmstudio:${sc.id}`),
+      Markup.button.callback('☁️ MiniMax cloud', `render:minimax:minimax:${sc.id}`),
     ]);
   } else if (status === 'rendered') {
     buttons.push([
       Markup.button.callback('🚀 Опубликовать', `publish:${sc.id}`),
-      Markup.button.callback('🎨 Повторить рендер', `render:${sc.id}`),
       Markup.button.callback('🔄 Revision', `revise:${sc.id}`),
+    ]);
+    buttons.push([
+      Markup.button.callback('🟧 Повторить (Local)', `render:drawthings:lmstudio:${sc.id}`),
+      Markup.button.callback('☁️ Повторить (MiniMax)', `render:minimax:minimax:${sc.id}`),
     ]);
   } else if (status === 'published') {
     buttons.push([
@@ -356,10 +363,12 @@ bot.command('help', async (ctx) => {
     `• Занимает 2-5 сек, 0 вызовов MiniMax, статус сценария не меняется\n` +
     `• Доступно для <code>rendered</code> и <code>published</code>\n\n` +
     `<b>🎨 Render (с выбором провайдера):</b>\n` +
-    `• <code>/render &lt;ID&gt;</code> — рендер с провайдерами из scenario.json / genre-table (default)\n` +
-    `• <code>/render &lt;ID&gt; drawthings</code> — override image provider (Draw Things + LoRA, локально)\n` +
-    `• <code>/render &lt;ID&gt; drawthings lmstudio</code> — override обоих (local stack, uncensored)\n` +
-    `• <code>/render &lt;ID&gt; minimax</code> — облачный рендер, цензура включена\n` +
+    `• В карточке сценария (<code>/view &lt;ID&gt;</code>) три inline-кнопки:\n` +
+    `  • 🎨 <b>Рендер</b> — провайдеры из scenario.json / router (auto)\n` +
+    `  • 🟧 <b>Local stack</b> — Draw Things + Magnum (uncensored)\n` +
+    `  • ☁️ <b>MiniMax cloud</b> — облако, цензура\n` +
+    `• Или через команду: <code>/render &lt;ID&gt; [image] [text]</code>\n` +
+    `  • <code>/render &lt;ID&gt; drawthings lmstudio</code> = то же что кнопка Local stack\n` +
     `• Image providers: <code>minimax</code> | <code>drawthings</code>. Text: <code>minimax</code> | <code>lmstudio</code>\n` +
     `• Требует persisted <code>approved</code> (CLAUDE.md rule 1). Async, до 3 минут polling.\n\n` +
     `<b>📁 HTML комикс и его редактирование:</b>\n` +
@@ -1384,9 +1393,11 @@ bot.action(/^edit_cancel:(.+)$/, async (ctx) => {
   }
 });
 
-bot.action(/^render:(.+)$/, async (ctx) => {
+bot.action(/^render:(auto|minimax|drawthings):(auto|minimax|lmstudio):(.+)$/, async (ctx) => {
   if (!assertAuthorized(ctx)) return;
-  const id = ctx.match[1];
+  const imageProvider = ctx.match[1];
+  const textProvider = ctx.match[2];
+  const id = ctx.match[3];
   const found = findScenario(id);
   if (!found) return ctx.answerCbQuery('Сценарий не найден');
 
@@ -1394,20 +1405,48 @@ bot.action(/^render:(.+)$/, async (ctx) => {
     return ctx.answerCbQuery('❌ Сценарий должен быть в статусе approved или rendered', { show_alert: true });
   }
 
-  ctx.answerCbQuery('🎨 Запускаю рендер...');
-  const progressMsg = await ctx.reply(`🎨 <b>Запущен рендер комикса <code>${id}</code>...</b>\n\n⏳ Генерируем изображения панелей через MiniMax AI и собираем итоговый стрип. Это может занять около 1-2 минут.`, { parse_mode: 'HTML' });
+  // Описание выбора для пользователя
+  const label =
+    imageProvider === 'auto' ? '🎨 Рендер (auto)' :
+    imageProvider === 'drawthings' ? '🟧 Local stack (DT+Magnum)' :
+    '☁️ MiniMax cloud';
+
+  ctx.answerCbQuery(label);
+  const stackNote =
+    imageProvider === 'auto'
+      ? '<i>провайдеры из scenario.json / router</i>'
+      : `<i>image=<code>${escapeHtml(imageProvider)}</code>, text=<code>${escapeHtml(textProvider)}</code></i>`;
+
+  const progressMsg = await ctx.reply(
+    `${label} <b>комикса <code>${id}</code>...</b>\n\n${stackNote}\n\n⏳ Генерируем панели и собираем стрип. Обычно 1-3 минуты.`,
+    { parse_mode: 'HTML' }
+  );
 
   let cmd = `${VENV_PYTHON} scripts/render_approved.py --scenario-id ${id}`;
+  if (imageProvider !== 'auto') {
+    cmd += ` --image-provider ${imageProvider}`;
+  }
+  if (textProvider !== 'auto') {
+    cmd += ` --text-provider ${textProvider}`;
+  }
   if (found.status === 'rendered') {
     cmd += ` --rerender --staging-dir data/.staging/bot_render_${id}_${Date.now()}`;
   }
+
+  // В тестах НЕ запускаем execAsync — иначе event loop не закрывается
+  // (subprocess держит handles). Тесты проверяют только progress message
+  // и answerCbQuery, не сам render.
+  if (global.isTestEnv) {
+    return;
+  }
+
   try {
     const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
     try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
 
     const updated = findScenario(id);
     if (updated) {
-      await ctx.reply(`🎉 <b>Рендеринг завершён!</b>`, { parse_mode: 'HTML' });
+      await ctx.reply(`🎉 <b>Рендер завершён!</b>`, { parse_mode: 'HTML' });
       await sendScenarioView(ctx, updated.scenario, updated.status);
     } else {
       await ctx.reply(`✅ Комикс <code>${id}</code> успешно отрендерен!`, { parse_mode: 'HTML' });
