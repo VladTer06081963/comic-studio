@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import base64
+import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -11,6 +14,9 @@ import requests
 from py.render.drawthings_client import (
     ASPECT_RATIO_SIZES,
     DTRuntimeError,
+    _get_dt_lora_trigger,
+    _load_dt_lora_triggers,
+    _resolve_dt_models_dir,
     _resolve_size,
     generate_image,
 )
@@ -85,39 +91,78 @@ class TestGenerateImageSuccess(unittest.TestCase):
         self.assertEqual(payload["height"], 1024)
 
     @patch("py.render.drawthings_client.requests.post")
-    def test_lora_passed_in_prompt_tag(self, mock_post):
-        """LoRA встраивается в prompt как `<lora:filename:weight>`, не через override_settings."""
-        mock_post.return_value = _mock_response({"images": [_TINY_PNG_B64]})
-
-        with patch.dict("os.environ", {}, clear=True):
-            with patch("py.render.drawthings_client.Path") as mock_path_cls:
-                mock_path = MagicMock()
-                mock_path_cls.return_value = mock_path
-                generate_image(
-                    "stalker scene", "/tmp/out.png",
+    def test_lora_passed_via_dt_trigger_prefix(self, mock_post):
+        """LoRA активируется через trigger prefix из custom_lora.json (родной DT)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models_dir = Path(tmp)
+            (models_dir / "custom_lora.json").write_text(json.dumps([
+                {
+                    "prefix": "industrial apocalypse style [1.0] ",
+                    "name": "STALKER_SDXL",
+                    "file": "stalker_sdxl_lora_f16.ckpt",
+                }
+            ]), encoding="utf-8")
+            # Очищаем кэш модуля, чтобы перезагрузился с нашим tmp
+            from py.render import drawthings_client as dtc
+            dtc._DT_LORA_CACHE = None
+            dtc._DT_MODELS_DIR = None
+            with patch.dict("os.environ", {"DRAWTHINGS_MODELS_DIR": str(models_dir)}):
+                # _resolve_size → (1024, 576). Прямо в файл — без Path-патча.
+                mock_post.return_value = _mock_response({"images": [_TINY_PNG_B64]})
+                result = generate_image(
+                    "stalker scene", "/tmp/dt_test_lora.png",
                     lora="stalker_sdxl_lora_f16.ckpt",
                 )
 
         args, kwargs = mock_post.call_args
         payload = kwargs["json"]
-        # Prompt содержит LoRA-тег
-        self.assertIn("<lora:stalker_sdxl_lora_f16.ckpt:0.7>", payload["prompt"])
-        # override_settings НЕ используется (это неправильное поле)
-        self.assertNotIn("override_settings", payload)
+        # Trigger prefix в начале prompt
+        self.assertTrue(
+            payload["prompt"].startswith("industrial apocalypse style [1.0] "),
+            f"Expected DT trigger prefix, got: {payload['prompt']!r}"
+        )
+        self.assertIn("stalker scene", payload["prompt"])
+        # НЕ используем A1111-стиль
+        self.assertNotIn("<lora:", payload["prompt"])
+        # File реально записан
+        self.assertTrue(result.exists())
 
     @patch("py.render.drawthings_client.requests.post")
-    def test_no_lora_no_prompt_tag(self, mock_post):
+    def test_no_lora_no_trigger(self, mock_post):
         mock_post.return_value = _mock_response({"images": [_TINY_PNG_B64]})
+        from py.render import drawthings_client as dtc
+        dtc._DT_LORA_CACHE = None
+        dtc._DT_MODELS_DIR = None
 
         with patch.dict("os.environ", {}, clear=True):
-            with patch("py.render.drawthings_client.Path") as mock_path_cls:
-                mock_path = MagicMock()
-                mock_path_cls.return_value = mock_path
-                generate_image("a cat", "/tmp/out.png")
+            generate_image("a cat", "/tmp/dt_test_nolora.png")
 
         args, kwargs = mock_post.call_args
         payload = kwargs["json"]
+        # Ни trigger, ни A1111-tag
         self.assertNotIn("<lora:", payload["prompt"])
+        self.assertNotIn("industrial apocalypse", payload["prompt"])
+
+    @patch("py.render.drawthings_client.requests.post")
+    def test_lora_not_in_custom_lora_falls_back_to_a1111_tag(self, mock_post):
+        """Если LoRA не зарегистрирована в custom_lora.json — fallback на A1111 tag."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models_dir = Path(tmp)
+            (models_dir / "custom_lora.json").write_text("[]", encoding="utf-8")
+            from py.render import drawthings_client as dtc
+            dtc._DT_LORA_CACHE = None
+            dtc._DT_MODELS_DIR = None
+            with patch.dict("os.environ", {"DRAWTHINGS_MODELS_DIR": str(models_dir)}):
+                mock_post.return_value = _mock_response({"images": [_TINY_PNG_B64]})
+                generate_image(
+                    "a cat", "/tmp/dt_test_unknown_lora.png",
+                    lora="unknown_lora.ckpt",
+                )
+
+        args, kwargs = mock_post.call_args
+        payload = kwargs["json"]
+        # Fallback на A1111-стиль
+        self.assertIn("<lora:unknown_lora.ckpt:0.7>", payload["prompt"])
 
     @patch("py.render.drawthings_client.requests.post")
     def test_random_seed_when_none(self, mock_post):

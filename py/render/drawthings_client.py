@@ -18,6 +18,7 @@ Env:
 from __future__ import annotations
 
 import base64
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -58,6 +59,82 @@ def _get_env(key: str, default: str) -> str:
     if key not in os.environ:
         logger.debug(f"Env {key!r} not set, using default: {default!r}")
     return val
+
+
+# Draw Things хранит свои LoRA triggers в custom_lora.json (рядом с моделями).
+# Каждый LoRA имеет trigger-prefix, который DT автоматически распознаёт в prompt
+# и активирует соответствующую модель. Это НЕ A1111 API — <lora:filename:weight>
+# Draw Things НЕ понимает, и возвращает 422 или игнорирует.
+_DT_MODELS_DIR: Optional[Path] = None
+_DT_LORA_CACHE: Optional[dict[str, str]] = None
+
+
+def _resolve_dt_models_dir() -> Optional[Path]:
+    """Возвращает путь к Draw Things Models/.
+
+    Default: ~/Library/Containers/com.liuliu.draw-things/Data/Documents/Models/
+    Override: env DRAWTHINGS_MODELS_DIR.
+    """
+    global _DT_MODELS_DIR
+    if _DT_MODELS_DIR is not None:
+        return _DT_MODELS_DIR
+    env_dir = os.environ.get("DRAWTHINGS_MODELS_DIR")
+    if env_dir:
+        _DT_MODELS_DIR = Path(env_dir)
+        return _DT_MODELS_DIR
+    default = Path.home() / "Library" / "Containers" / "com.liuliu.draw-things" / "Data" / "Documents" / "Models"
+    if default.exists():
+        _DT_MODELS_DIR = default
+        return _DT_MODELS_DIR
+    return None
+
+
+def _load_dt_lora_triggers() -> dict[str, str]:
+    """Читает custom_lora.json и возвращает map: filename → trigger prefix.
+
+    Если файл не найден или malformed — возвращает пустой dict (fallback на A1111-стиль).
+    """
+    global _DT_LORA_CACHE
+    if _DT_LORA_CACHE is not None:
+        return _DT_LORA_CACHE
+    cache: dict[str, str] = {}
+    models_dir = _resolve_dt_models_dir()
+    if not models_dir:
+        _DT_LORA_CACHE = cache
+        return cache
+    cfg_path = models_dir / "custom_lora.json"
+    if not cfg_path.exists():
+        _DT_LORA_CACHE = cache
+        return cache
+    try:
+        with cfg_path.open(encoding="utf-8") as f:
+            entries = json.load(f)
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            fname = entry.get("file")
+            prefix = entry.get("prefix", "")
+            if fname and prefix and "[" in prefix:
+                # trigger like "industrial apocalypse style [1.0] " — weight in brackets
+                cache[fname] = prefix
+        logger.debug(f"Loaded {len(cache)} DT LoRA triggers from {cfg_path}")
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to load DT custom_lora.json from {cfg_path}: {e}")
+    _DT_LORA_CACHE = cache
+    return cache
+
+
+def _get_dt_lora_trigger(lora_filename: Optional[str]) -> Optional[str]:
+    """Возвращает DT trigger-prefix для LoRA, или None если не найден.
+
+    LoRA без trigger-prefix в custom_lora.json нельзя активировать через
+    A1111 API — DT не подхватит её. Возвращаем None, и caller может попробовать
+    fallback на `<lora:filename:0.7>` (но он скорее всего тоже не сработает).
+    """
+    if not lora_filename:
+        return None
+    triggers = _load_dt_lora_triggers()
+    return triggers.get(lora_filename)
 
 
 def _parse_int_env(key: str, default: int) -> int:
@@ -118,17 +195,28 @@ def generate_image(
     width, height = _resolve_size(aspect_ratio)
     url = f"{base_url}/sdapi/v1/txt2img"
 
-    # LoRA: Draw Things (как и A1111) принимает LoRA через prompt tag `<lora:name:weight>`.
-    # Поле `override_settings.sd_model_lora` (которое я пробовал раньше) Draw Things
-    # интерпретирует как `lora_<name>` и возвращает HTTP 422 "Missing file: lora_<name>".
-    # Inline-тег — самый совместимый способ.
+    # LoRA: Draw Things использует НЕ A1111 API. Свой формат — `trigger prefix`
+    # из custom_lora.json, который DT автоматически распознаёт в prompt и
+    # активирует соответствующий LoRA. inline `<lora:filename:weight>` (как у
+    # A1111) DT НЕ понимает и возвращает 422 или просто игнорирует.
+    #
+    # Пример trigger: "industrial apocalypse style [1.0] " (для stalker_sdxl_lora)
     full_prompt = prompt
     full_negative = negative_prompt
     if lora:
-        # Weight по умолчанию 0.7 (см. character sheet рекомендации).
-        # Если в имени уже есть `.ckpt` / `.safetensors` — оставляем как есть.
-        lora_filename = lora  # e.g. "stalker_sdxl_lora_f16.ckpt"
-        full_prompt = f"{prompt} <lora:{lora_filename}:0.7>"
+        trigger = _get_dt_lora_trigger(lora)
+        if trigger:
+            full_prompt = f"{trigger}{prompt}"
+            logger.info(f"DT LoRA '{lora}' activated via trigger prefix: {trigger!r}")
+        else:
+            # Fallback: попробуем A1111-стиль (на случай, если custom_lora.json
+            # не обновлялся, или LoRA добавлен вручную без trigger). DT скорее
+            # всего проигнорирует, но попытка не повредит.
+            full_prompt = f"{prompt} <lora:{lora}:0.7>"
+            logger.warning(
+                f"DT LoRA '{lora}' не найдена в custom_lora.json, fallback на "
+                f"A1111-inline-тег (может не сработать)"
+            )
 
     payload: dict = {
         "prompt": full_prompt,

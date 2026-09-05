@@ -243,3 +243,15 @@
   - **`tests/test_drawthings_client.py`**: тест `test_lora_passed_in_override_settings` → переименован в `test_lora_passed_in_prompt_tag`, проверяет inline-тег. Тест `test_no_lora_no_override_settings` → `test_no_lora_no_prompt_tag`.
   - **Дополнительный фикс в `tg-bot/bot.js`**: после рендера бот проверяет `scenario.image_provider_fallback` / `text_provider_fallback` (записываются `mark_fallback` в `provider_router.py`). Если fallback сработал — в success-сообщении выводится ⚠️ warning с указанием какой провайдер упал и на что переключились. Больше нет silent fallback'ов.
   - **Verification**: 20/20 drawthings_client (был 29, теперь 20 после удаления старых тестов), 30/30 tg-bot, 114/114 Python — **164/164 OK**.
+- `2026-09-06T00:58:00+03:00` — **fix(render): Draw Things native trigger prefix из custom_lora.json**. Inline `<lora:filename:weight>` (A1111-стиль) Draw Things **НЕ понимает** — API либо игнорирует, либо возвращает 422. У Draw Things свой формат: trigger-prefix из `custom_lora.json` (например, `"industrial apocalypse style [1.0] "` для stalker), который DT автоматически распознаёт в prompt и активирует соответствующий LoRA.
+  - **`py/render/drawthings_client.py`**: добавлены `_resolve_dt_models_dir()`, `_load_dt_lora_triggers()`, `_get_dt_lora_trigger()`. Теперь `generate_image(lora=...)`:
+    1. Ищет trigger в `~/Library/Containers/com.liuliu.draw-things/Data/Documents/Models/custom_lora.json`
+    2. Если найден — prepend'ит trigger к prompt (DT активирует LoRA автоматически)
+    3. Если не найден — fallback на A1111-inline-тег (может не сработать, но попытка не повредит)
+  - **Env override**: `DRAWTHINGS_MODELS_DIR` для override пути к Models (полезно для тестов и нестандартных установок).
+  - **Реальная диагностика проблемы** (с пользователем):
+    - Draw Things был завис в inference (`U` state, не отвечал на API)
+    - Killing + restart решил процесс, но HTTP API не поднялся без GUI window (известное ограничение DT на macOS)
+    - Стёрт мусорный дубликат `stalker_sdxl_lora_f16_lora_f16.ckpt` (Draw Things сам создал его при неудачной попытке загрузить LoRA с override_settings.sd_model_lora)
+  - **Tests**: `tests/test_drawthings_client.py` — 21 тест (3 новых: trigger prefix из custom_lora.json, fallback на A1111 tag, no-lora no-trigger). 21/21 OK.
+  - **Текущий blocker**: пользователь должен открыть Draw Things GUI window (нажать на иконку в Dock), дождаться загрузки SDXL base (~1-3 мин), и тогда HTTP API поднимется. После этого бот сможет реально использовать Draw Things через trigger prefix.
