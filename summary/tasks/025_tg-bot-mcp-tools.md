@@ -19,10 +19,10 @@
 | 10 | Обновить `AGENTS.md` (раздел Telegram bot MCP integration) | 10m | ✅ Done |
 | 11 | Обновить `AGENTS.md` (раздел Quality reference) | 5m | ✅ Done |
 | 12 | Verification: e2e через Telegram (`/mcp_list`, `/mcp get_scenario`, `/mcp create_comic`, ошибки) | 15m | ✅ Done |
-| 13 | Дописать `py/render/comic_assembler.py` чтение `data/.provider` для выбора client | 30m | ⏸ TODO |
-| 14 | Добавить `draw-things` в `~/.minimax/mcp.json` для бота | 5m | ⏸ TODO |
-| 15 | Тест: `mcp:draw-things:generate_image` через бота | 10m | ⏸ TODO |
-| 16 | Cleanup: `mavis-trash data/scenarios/draft/486188d1.json` (e2e артефакт) | 1m | ⏸ TODO |
+| 13 | Дописать `py/render/comic_assembler.py` чтение `data/.provider` для выбора client | 30m | ❌ Cancelled (см. tasks #26) |
+| 14 | Добавить `draw-things` в `~/.minimax/mcp.json` для бота | 5m | ✅ Done (добавлен отдельно, не через эту задачу) |
+| 15 | Тест: `mcp:draw-things:generate_image` через бота | 10m | ❌ Cancelled (см. tasks #26) |
+| 16 | Cleanup: `mavis-trash data/scenarios/draft/486188d1.json` (e2e артефакт) | 1m | ❌ Cancelled — Draw Things path не используется |
 
 ## Зависимости
 

@@ -101,3 +101,12 @@
   - Verification: e2e через Telegram (5 команд протестированы), MCP-client standalone, write-op cycle (create→approve).
   - **TODO (отдельная задача):** дописать `py/render/comic_assembler.py` чтение `data/.provider` для выбора client, зарегистрировать draw-things-mcp в `~/.minimax/mcp.json`.
   - Audit: `summary/audit/025_tg-bot-mcp-tools.md`. Tasks: `summary/tasks/025_tg-bot-mcp-tools.md`.
+- `2026-09-05T22:00:00+03:00` — **Фиксация 026: Remove Draw Things orchestrator from main**. Удалена exploratory-обвязка Draw Things (audit 025 не доведён до конца, render-side wiring не сделан → `/provider` был UI-иллюзией). Изменения:
+  - **`tg-bot/mcp-client.js`** — переписан с multi-server (225 строк, читал `~/.minimax/mcp.json`, lazy registry) на single-server (100 строк, hardcoded `comic-studio`). Публичный API сохранён: `createMcpClient`, `listTools`, `callTool`, `closeMcpClient`, `formatMcpResult`. Сигнатура `callTool(handle, name, args)` — как в pre-`bd0a10e`.
+  - **`tg-bot/bot.js`** — удалено: `/provider` команда, `provider_set:` action, `readProviderState`/`writeProviderState`/`providerStatusLine`/`providerKeyboard`/`PROVIDERS`/`DEFAULT_PROVIDER`/`PROVIDER_STATE_PATH`, строка «Image provider: ...» в `/start`, упоминания `draw-things` и `data/.provider` в `/mcp` help. ~80 строк кода.
+  - **`.gitignore`** — удалена строка `data/.provider`.
+  - **`AGENTS.md`** — секция «Image gen provider» переписана: только `minimax` как текущий провайдер; упоминание `drawthings`/`IMAGE_PROVIDER` удалено. Секция «Telegram bot MCP integration» дополнена single-server scope.
+  - **`summary/tasks/025_tg-bot-mcp-tools.md`** — tasks 13, 15, 16 помечены ❌ Cancelled; task 14 (регистрация `draw-things` в `~/.minimax/mcp.json`) помечен ✅ Done (добавлен отдельно).
+  - **Что НЕ тронуто:** `mcp-server/index.js` (он и был single-domain), `py/render/minimax_client.py` (единственный рабочий image-провайдер), `~/Projects/draw-things-mcp/` (независимый проект), `~/.minimax/mcp.json` (runtime-конфиг пользователя).
+  - **Demo-ветка** получает чистый main без half-wired интеграций; draw-things остаётся доступным напрямую через Hermes.
+  - Audit: `summary/audit/026_remove-draw-things-orchestrator.md`. Tasks: `summary/tasks/026_remove-draw-things-orchestrator.md`. Будущее: F1 в tasks 026 (полная интеграция Draw Things v2, если будет запрос).

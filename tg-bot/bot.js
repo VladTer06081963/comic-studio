@@ -63,33 +63,11 @@ const STATUS_BADGES = {
   rejected: '🔴 Отклонён',
 };
 
-// ── Image provider state (data/.provider, runtime-only) ─────────────────────
-const PROVIDER_STATE_PATH = path.join(DATA_DIR, '.provider');
-const PROVIDERS = ['minimax', 'drawthings'];
-const DEFAULT_PROVIDER = 'minimax';
-
-function readProviderState() {
-  try {
-    if (fs.existsSync(PROVIDER_STATE_PATH)) {
-      const data = JSON.parse(fs.readFileSync(PROVIDER_STATE_PATH, 'utf-8'));
-      const current = PROVIDERS.includes(data.current) ? data.current : DEFAULT_PROVIDER;
-      return { current, available: [...PROVIDERS] };
-    }
-  } catch (e) {
-    // fall through to default
-  }
-  return { current: DEFAULT_PROVIDER, available: [...PROVIDERS] };
-}
-
-function writeProviderState(state) {
-  const dir = path.dirname(PROVIDER_STATE_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  atomicWrite(PROVIDER_STATE_PATH, state);
-}
-
-function providerStatusLine(state) {
-  return `Текущий: <code>${state.current}</code>`;
-}
+// ── Image provider ────────────────────────────────────────────────────────────
+// Единственный image-провайдер — MiniMax через py/render/minimax_client.py.
+// Provider switcher и data/.provider удалены в фиксации 026 (см.
+// summary/audit/026_remove-draw-things-orchestrator.md). Draw Things не
+// входит в demo-ветку.
 
 function findScenario(id) {
   for (const status of ['draft', 'approved', 'rendered', 'published', 'rejected']) {
@@ -311,7 +289,6 @@ async function sendScenarioView(ctx, sc, status) {
 // /start
 bot.command('start', async (ctx) => {
   if (!assertAuthorized(ctx)) return;
-  const providerState = readProviderState();
   const welcome =
     `<b>🤖 Comic Studio Bot</b>\n\n` +
     `Я помогаю создавать, утверждать, рендерить и публиковать серийные комиксы с помощью MiniMax AI.\n\n` +
@@ -323,7 +300,6 @@ bot.command('start', async (ctx) => {
     `• Текст → свободная идея\n` +
     `• URL → статья из интернета\n` +
     `• YouTube → видео с субтитрами\n\n` +
-    `Image provider: <code>${providerState.current}</code> (смена: <code>/provider</code>)\n\n` +
     `Используй <b>/help</b> для списка всех команд.`;
   await ctx.reply(welcome, { parse_mode: 'HTML', ...getMainMenu() });
 });
@@ -742,45 +718,34 @@ bot.command('mcode', async (ctx) => {
 //   /mcp approve_scenario {"id": "abc12345"}
 //   /mcp render_comic {"id": "abc12345", "mode": "initial"}
 import {
-  listAllTools,
+  createMcpClient,
+  listTools as listMcpTools,
   callTool as mcpCallTool,
   formatMcpResult,
-  closeAll as mcpCloseAll,
-  resolveToolServer,
+  closeMcpClient,
 } from './mcp-client.js';
 
 bot.command('mcp_list', async (ctx) => {
   if (!assertAuthorized(ctx)) return;
-  const statusMsg = await ctx.reply('🔌 <b>Подключаюсь к MCP серверам...</b>', { parse_mode: 'HTML' });
+  const statusMsg = await ctx.reply('🔌 <b>Подключаюсь к comic-studio MCP...</b>', { parse_mode: 'HTML' });
 
+  let handle;
   try {
-    const tools = await listAllTools();
-    // group by server
-    const byServer = {};
-    for (const t of tools) {
-      (byServer[t.server] ||= []).push(t);
-    }
-    const sections = Object.entries(byServer).map(([server, ts]) => {
-      const valid = ts.filter((t) => t.name !== '__error__');
-      const errors = ts.filter((t) => t.name === '__error__');
-      const lines = valid.map((t) => {
-        const params = t.inputSchema?.properties
-          ? Object.keys(t.inputSchema.properties).map((k) => {
-              const required = (t.inputSchema.required || []).includes(k);
-              return `${k}${required ? '*' : ''}`;
-            }).join(', ')
-          : '—';
-        return `<b>${escapeHtml(t.name)}</b>(<i>${escapeHtml(params)}</i>)\n  ${escapeHtml(t.description.substring(0, 200))}`;
-      });
-      let block = `<b>${escapeHtml(server)}</b> (${valid.length} тулов)\n\n${lines.join('\n\n')}`;
-      if (errors.length) {
-        block += `\n\n<i>⚠ ошибка: ${escapeHtml(errors[0].description.substring(0, 200))}</i>`;
-      }
-      return block;
+    handle = await createMcpClient();
+    const tools = await listMcpTools(handle);
+    const lines = tools.map((t) => {
+      const params = t.inputSchema?.properties
+        ? Object.keys(t.inputSchema.properties).map((k) => {
+            const required = (t.inputSchema.required || []).includes(k);
+            return `${k}${required ? '*' : ''}`;
+          }).join(', ')
+        : '—';
+      return `<b>${escapeHtml(t.name)}</b>(<i>${escapeHtml(params)}</i>)\n  ${escapeHtml(t.description.substring(0, 200))}`;
     });
+    const block = `🔌 <b>MCP — comic-studio (${tools.length} тулов)</b>\n\n${lines.join('\n\n')}`;
     await ctx.telegram.editMessageText(
       ctx.chat.id, statusMsg.message_id, null,
-      `🔌 <b>MCP — ${Object.keys(byServer).length} сервер(ов), ${tools.filter(t => t.name !== '__error__').length} тулов</b>\n\n${sections.join('\n\n—\n\n')}`,
+      block,
       { parse_mode: 'HTML' }
     );
   } catch (e) {
@@ -790,7 +755,7 @@ bot.command('mcp_list', async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } finally {
-    await mcpCloseAll();
+    await closeMcpClient(handle);
   }
 });
 
@@ -802,13 +767,11 @@ bot.command('mcp', async (ctx) => {
 
   if (!body) {
     return ctx.reply(
-      '🔌 <b>/mcp</b> — прямой вызов MCP-тула\n\n' +
+      '🔌 <b>/mcp</b> — прямой вызов MCP-тула comic-studio\n\n' +
       'Использование:\n' +
       '• <code>/mcp &lt;tool&gt;</code> — вызов без аргументов\n' +
       '• <code>/mcp &lt;tool&gt; {"key": "value"}</code> — вызов с JSON-аргументами\n\n' +
-      'Серверы берутся из <code>~/.minimax/mcp.json</code>. Сейчас: ' +
-      '<code>comic-studio</code> (10 тулов) + <code>draw-things</code> ' +
-      '(2 тула: <code>generate_image</code>, <code>get_options</code>).\n\n' +
+      'Подключён один MCP-сервер: <code>comic-studio</code> (10 тулов).\n' +
       'Сначала посмотри список тулов: <code>/mcp_list</code>',
       { parse_mode: 'HTML' }
     );
@@ -837,13 +800,15 @@ bot.command('mcp', async (ctx) => {
   }
 
   const statusMsg = await ctx.reply(
-    `🔌 <b>MCP</b> <code>${escapeHtml(toolName)}</code> ${Object.keys(args).length ? `<i>(${Object.keys(args).length} args)</i>` : ''}\n\n⏳ Резолвлю сервер и вызываю...`,
+    `🔌 <b>MCP</b> <code>${escapeHtml(toolName)}</code> ${Object.keys(args).length ? `<i>(${Object.keys(args).length} args)</i>` : ''}\n\n⏳ Вызываю...`,
     { parse_mode: 'HTML' }
   );
 
   let result;
+  let handle;
   try {
-    result = await mcpCallTool(toolName, args);
+    handle = await createMcpClient();
+    result = await mcpCallTool(handle, toolName, args);
     const formatted = formatMcpResult(result);
     try { await ctx.deleteMessage(statusMsg.message_id); } catch (e) {}
     if (result.isError) {
@@ -867,75 +832,14 @@ bot.command('mcp', async (ctx) => {
       await ctx.reply(`❌ MCP error: <pre>${escapeHtml(errMsg)}</pre>`, { parse_mode: 'HTML' });
     }
   } finally {
-    await mcpCloseAll();
-  }
-});
-
-// ── /provider: переключение image-провайдера (MiniMax ↔ Draw Things) ────────
-//
-// Состояние хранится в data/.provider (runtime, в .gitignore). Кнопка пишет
-// туда выбор пользователя. Кроме того, /mcp draw_things generate_image
-// уже доступен через бота (см. /mcp_list) — для ad-hoc проверок без
-// рендера. Render-side wiring (comic_assembler.py читает data/.provider) —
-// отдельная задача (см. summary/tasks/025).
-//
-// Действия:
-//   /provider           — показать текущий + inline-кнопки
-//   нажатие кнопки       — переключить + обновить сообщение
-function providerKeyboard(state) {
-  return Markup.inlineKeyboard(
-    state.available.map((p) => {
-      const isActive = p === state.current;
-      const label = isActive ? `🟢 ${p} (active)` : `⚪ ${p}`;
-      return [Markup.button.callback(label, `provider_set:${p}`)];
-    })
-  );
-}
-
-bot.command('provider', async (ctx) => {
-  if (!assertAuthorized(ctx)) return;
-  const state = readProviderState();
-  const text =
-    `<b>🖼 Image provider</b>\n\n` +
-    `${providerStatusLine(state)}\n` +
-    `Доступные: <code>${state.available.join('</code>, <code>')}</code>\n\n` +
-    `<i>Состояние хранится в <code>data/.provider</code>.\n` +
-    `Переключение действует на следующий <code>/mcp render_comic</code>.\n` +
-    `Для <code>drawthings</code> используется <code>draw-things-mcp</code> (отдельный MCP-сервер, уже зарегистрирован в Hermes).</i>`;
-  await ctx.reply(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
-});
-
-bot.action(/^provider_set:(.+)$/, async (ctx) => {
-  // ⚠️ answerCbQuery() В САМОМ НАЧАЛЕ — иначе Telegram timeout'ит и показывает
-  // "text copied" / loading-спиннер до бесконечности, пока бот думает.
-  await ctx.answerCbQuery();
-
-  if (!assertAuthorized(ctx)) return;
-  const newProvider = ctx.match[1];
-  if (!PROVIDERS.includes(newProvider)) {
-    await ctx.reply(`❌ Unknown: <code>${escapeHtml(newProvider)}</code>`, { parse_mode: 'HTML' });
-    return;
-  }
-  const state = readProviderState();
-  const previous = state.current;
-  state.current = newProvider;
-  writeProviderState(state);
-
-  const text =
-    `<b>🖼 Image provider</b>\n\n` +
-    `Было: <code>${previous}</code> → Стало: <code>${newProvider}</code>\n\n` +
-    `<i>Следующий <code>/mcp render_comic</code> будет использовать этого провайдера.\n` +
-    `Для <code>drawthings</code> — draw-things-mcp на <code>:7860</code>.</i>`;
-  try {
-    await ctx.editMessageText(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
-  } catch (e) {
-    // если сообщение нельзя отредактировать (например, слишком старое),
-    // шлём новое
-    await ctx.reply(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
+    await closeMcpClient(handle);
   }
 });
 
 // ── Ingest & Generation Pipeline Helper ────────────────────────────────────────
+//
+// Единственный image-провайдер — MiniMax через py/render/minimax_client.py.
+// Provider switcher удалён в фиксации 026 (Draw Things не в demo-ветке).
 async function processCreateComic(ctx, input) {
   const statusMsg = await ctx.reply(`⏳ <b>Генерация сценария...</b>\nАнализирую источник и генерирую кадры с MiniMax LLM...`, { parse_mode: 'HTML' });
 

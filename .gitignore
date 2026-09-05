@@ -40,7 +40,6 @@ data/scenarios/published/*
 data/jobs/*
 data/.staging/*
 data/.trash/*
-data/.provider
 data/freeform/*
 
 # Comics output

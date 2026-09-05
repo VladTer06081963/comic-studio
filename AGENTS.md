@@ -118,12 +118,13 @@ production-grade answers unless explicitly asked.
 ## Image gen provider
 
 - **Current:** `minimax` (cloud) via `py/render/minimax_client.py`.
-- **Evaluating:** `drawthings` (local) for Stalker / military themes — no
-  censorship, full model choice (Flux, SDXL, Pony, NoobAI), LoRA-friendly.
-- **Switch:** set `IMAGE_PROVIDER=drawthings` in `.env`. `py/render/drawthings_client.py`
-  is a TODO; mirror the interface of `minimax_client.py` so the rest of the
-  pipeline doesn't notice the change.
-- Do **not** switch providers mid-series — that breaks character/style consistency.
+- Единственный image-провайдер в main. Draw Things **не** интегрирован
+  в рендер-пайплайн, `/provider` команда в Telegram-боте удалена (см.
+  `summary/audit/026_remove-draw-things-orchestrator.md`).
+- Если/когда понадобится второй провайдер — это отдельный change со своим
+  OpenSpec, со своим client-модулем, пробрасыванием `provider` через
+  `mcp-server` → web API → render scripts и явным `render_provider` в
+  scenario JSON (см. `summary/tasks/026` → F1).
 
 ## Censorship-sensitive content
 
@@ -321,9 +322,13 @@ client — not useful for triggering exec tasks from another process.
 ## Telegram bot MCP integration (`tg-bot/`)
 
 The bot has its own MCP client (`tg-bot/mcp-client.js`) that spawns the
-comic-studio MCP server via stdio and calls tools directly. This is
+**comic-studio** MCP server via stdio and calls tools directly. This is
 **independent of mcode** and gives the bot full MCP power without the
 exec limitation.
+
+Single-server scope: бот подключается только к `comic-studio` MCP.
+Draw Things и другие MCP-серверы доступны через Hermes / IDE напрямую,
+в бот они не заведены (см. `summary/audit/026_remove-draw-things-orchestrator.md`).
 
 ### Bot commands
 
