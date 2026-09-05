@@ -83,3 +83,21 @@
   - **Удалены локальные `.DS_Store`** из корня, `summary/`, `openspec/`, `py/`, `scripts/`, `web/`, `data/` (правило `.gitignore:67` уже было — файлы были только локально, в git не попадали).
   - **Format audit (22 файла)**: `022_*` = 9/9 (эталон), `020-021_*` = 5-7/9, `001-019_*` = 1-3/9 (исторический drift формата; **архивные файлы не правились** — переписывать прошлое дороже, чем задокументировать настоящее). Шаблон позволит будущим задачам автоматически иметь полный формат.
   - **`mcp.json`**: добавлен в `~/.minimax/mcp.json` для подключения comic-studio MCP к mcode (через `cwd: ~/Projects/comic-studio` для загрузки `.env`).
+
+## 2026-09-05
+
+- `2026-09-05T14:38:00+03:00` — **Telegram bot — direct MCP tools + provider switcher** (change `tg-bot-mcp-tools`):
+  - **`tg-bot/mcp-client.js` (CREATED, 95 строк)** — прямой MCP-клиент через `@modelcontextprotocol/sdk`. Бот теперь может вызывать все 10 тулов comic-studio MCP без посредника (Web API).
+  - **`tg-bot/bot.js` (MODIFIED)** — три новые команды:
+    - `/mcp_list` — inline-список всех 10 MCP-тулов
+    - `/mcp <tool> [json-args]` — прямой вызов тула, без LLM в горячем пути
+    - `/mcode <task>` — запуск mcode exec (LLM-задачи через filesystem+bash)
+    - `/provider` — UI переключатель image-провайдера с inline-кнопками `🟢 minimax (active) / ⚪ drawthings`
+  - **State провайдера** хранится в `data/.provider` (JSON, добавлен в `.gitignore`).
+  - **Фикс callback timeout** — `answerCbQuery()` теперь первой строкой в action-handler, иначе Telegram показывает «text copied» через ~10 сек.
+  - **`AGENTS.md`** — секции «Telegram bot MCP integration» и «Quality reference» (https://openaiua.fr/comic/chernobyl-ritual/ как quality bar).
+  - **`tg-bot/package.json`** — добавлен `@modelcontextprotocol/sdk: ^1.30.0`.
+  - **Обнаружено:** `~/Projects/draw-things-mcp/` уже содержит готовый stdio-MCP для Draw Things с `generate_image` (prompt, seed, lora). Не нужен `py/render/drawthings_client.py` — путь через MCP покрывает функциональность.
+  - Verification: e2e через Telegram (5 команд протестированы), MCP-client standalone, write-op cycle (create→approve).
+  - **TODO (отдельная задача):** дописать `py/render/comic_assembler.py` чтение `data/.provider` для выбора client, зарегистрировать draw-things-mcp в `~/.minimax/mcp.json`.
+  - Audit: `summary/audit/025_tg-bot-mcp-tools.md`. Tasks: `summary/tasks/025_tg-bot-mcp-tools.md`.
