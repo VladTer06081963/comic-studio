@@ -118,9 +118,21 @@ def generate_image(
     width, height = _resolve_size(aspect_ratio)
     url = f"{base_url}/sdapi/v1/txt2img"
 
+    # LoRA: Draw Things (как и A1111) принимает LoRA через prompt tag `<lora:name:weight>`.
+    # Поле `override_settings.sd_model_lora` (которое я пробовал раньше) Draw Things
+    # интерпретирует как `lora_<name>` и возвращает HTTP 422 "Missing file: lora_<name>".
+    # Inline-тег — самый совместимый способ.
+    full_prompt = prompt
+    full_negative = negative_prompt
+    if lora:
+        # Weight по умолчанию 0.7 (см. character sheet рекомендации).
+        # Если в имени уже есть `.ckpt` / `.safetensors` — оставляем как есть.
+        lora_filename = lora  # e.g. "stalker_sdxl_lora_f16.ckpt"
+        full_prompt = f"{prompt} <lora:{lora_filename}:0.7>"
+
     payload: dict = {
-        "prompt": prompt,
-        "negative_prompt": negative_prompt,
+        "prompt": full_prompt,
+        "negative_prompt": full_negative,
         "seed": seed if seed is not None else -1,
         "sampler_name": sampler,
         "steps": steps,
@@ -128,8 +140,6 @@ def generate_image(
         "width": width,
         "height": height,
     }
-    if lora:
-        payload["override_settings"] = {"sd_model_lora": lora}
 
     logger.info(
         f"Draw Things → {url} {width}x{height} seed={payload['seed']} "

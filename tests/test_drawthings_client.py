@@ -85,7 +85,8 @@ class TestGenerateImageSuccess(unittest.TestCase):
         self.assertEqual(payload["height"], 1024)
 
     @patch("py.render.drawthings_client.requests.post")
-    def test_lora_passed_in_override_settings(self, mock_post):
+    def test_lora_passed_in_prompt_tag(self, mock_post):
+        """LoRA встраивается в prompt как `<lora:filename:weight>`, не через override_settings."""
         mock_post.return_value = _mock_response({"images": [_TINY_PNG_B64]})
 
         with patch.dict("os.environ", {}, clear=True):
@@ -99,14 +100,13 @@ class TestGenerateImageSuccess(unittest.TestCase):
 
         args, kwargs = mock_post.call_args
         payload = kwargs["json"]
-        self.assertIn("override_settings", payload)
-        self.assertEqual(
-            payload["override_settings"]["sd_model_lora"],
-            "stalker_sdxl_lora_f16.ckpt",
-        )
+        # Prompt содержит LoRA-тег
+        self.assertIn("<lora:stalker_sdxl_lora_f16.ckpt:0.7>", payload["prompt"])
+        # override_settings НЕ используется (это неправильное поле)
+        self.assertNotIn("override_settings", payload)
 
     @patch("py.render.drawthings_client.requests.post")
-    def test_no_lora_no_override_settings(self, mock_post):
+    def test_no_lora_no_prompt_tag(self, mock_post):
         mock_post.return_value = _mock_response({"images": [_TINY_PNG_B64]})
 
         with patch.dict("os.environ", {}, clear=True):
@@ -117,7 +117,7 @@ class TestGenerateImageSuccess(unittest.TestCase):
 
         args, kwargs = mock_post.call_args
         payload = kwargs["json"]
-        self.assertNotIn("override_settings", payload)
+        self.assertNotIn("<lora:", payload["prompt"])
 
     @patch("py.render.drawthings_client.requests.post")
     def test_random_seed_when_none(self, mock_post):

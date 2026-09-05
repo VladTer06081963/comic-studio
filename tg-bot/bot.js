@@ -1466,7 +1466,18 @@ bot.action(/^render:(auto|minimax|drawthings):(auto|minimax|lmstudio):(.+)$/, as
 
     const updated = findScenario(id);
     if (updated) {
-      await ctx.reply(`🎉 <b>Рендер завершён!</b>`, { parse_mode: 'HTML' });
+      // Проверяем, был ли fallback (т.е. провайдер из кнопки упал и переключился)
+      const imgFallback = updated.scenario.image_provider_fallback;
+      const txtFallback = updated.scenario.text_provider_fallback;
+      const fallbackWarning = (imgFallback || txtFallback)
+        ? `\n\n⚠️ <b>Fallback сработал:</b> ${imgFallback ? `image: ${escapeHtml(imageProvider)} → ${escapeHtml(imgFallback)}` : ''}${imgFallback && txtFallback ? '; ' : ''}${txtFallback ? `text: ${escapeHtml(textProvider)} → ${escapeHtml(txtFallback)}` : ''}\n` +
+          `Запрошенный провайдер был недоступен. Проверь Draw Things / LM Studio.`
+        : '';
+
+      await ctx.reply(
+        `🎉 <b>Рендер завершён!</b>${fallbackWarning}`,
+        { parse_mode: 'HTML' }
+      );
       await sendScenarioView(ctx, updated.scenario, updated.status);
     } else {
       await ctx.reply(`✅ Комикс <code>${id}</code> успешно отрендерен!`, { parse_mode: 'HTML' });

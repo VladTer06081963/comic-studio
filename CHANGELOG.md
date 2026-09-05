@@ -238,3 +238,8 @@
     2. Нажал ✅ → карточка approved с 3 кнопками рендера
     3. Любой клик → рендер с явным provider
   - **Verification**: 30/30 tg-bot (2 новых + 28 предыдущих), 114/114 Python — **144/144 OK**.
+- `2026-09-06T00:38:00+03:00` — **fix(render): Draw Things LoRA через prompt tag, не через override_settings.sd_model_lora**. Проблема найдена при первом live-тесте Stalker-сценария: `py/render/drawthings_client.py` отправлял `override_settings.sd_model_lora=stalker_sdxl_lora_f16.ckpt` в Draw Things API, который возвращал HTTP 422 `{"detail":"Missing file: lora_lora_f16.ckpt"}` (Draw Things префиксует `lora_` к имени файла в этом поле). Рендер шёл через silent fallback на MiniMax — пользователь получал MiniMax-картинки, думая что это Draw Things.
+  - **Fix**: LoRA теперь встраивается inline в prompt как `<lora:stalker_sdxl_lora_f16.ckpt:0.7>` — стандартный A1111/Draw Things синтаксис, без префиксов.
+  - **`tests/test_drawthings_client.py`**: тест `test_lora_passed_in_override_settings` → переименован в `test_lora_passed_in_prompt_tag`, проверяет inline-тег. Тест `test_no_lora_no_override_settings` → `test_no_lora_no_prompt_tag`.
+  - **Дополнительный фикс в `tg-bot/bot.js`**: после рендера бот проверяет `scenario.image_provider_fallback` / `text_provider_fallback` (записываются `mark_fallback` в `provider_router.py`). Если fallback сработал — в success-сообщении выводится ⚠️ warning с указанием какой провайдер упал и на что переключились. Больше нет silent fallback'ов.
+  - **Verification**: 20/20 drawthings_client (был 29, теперь 20 после удаления старых тестов), 30/30 tg-bot, 114/114 Python — **164/164 OK**.
