@@ -211,12 +211,14 @@ def _generate_candidate(
     captions = [panel["caption"] for panel in panels]
 
     # === Page-by-page assembly (openaiua.fr style) ===
-    # Генерируем pages/ + audio/ + pages.json
+    # Генерируем pages/ + audio/ + pages.json.
+    # В initial mode panel_root = canonical; в rerender mode panel_root = staging,
+    # чтобы pages/ и pages.json не перезаписывали canonical до backup/promote.
     page_result = assemble_pages(
         scenario=scenario,
-        panels_dir=comics_dir() / sid,
-        audio_dir=comics_dir() / sid / "audio",
-        output_dir=comics_dir() / sid,
+        panels_dir=panel_root,
+        audio_dir=panel_root / "audio",
+        output_dir=panel_root,
         generate_cover=True,
         pause_ms=700,
     )
@@ -264,6 +266,8 @@ def _promote_rerender(
     current_final = comics_dir() / f"{sid}.png"
     current_panels = comics_dir() / sid
     current_raw = comics_dir() / "raw" / f"{sid}.png"
+    current_html = comics_dir() / f"{sid}.html"
+    candidate_html = candidate_panels.parent / f"{sid}.html"
     if not current_final.exists():
         raise RuntimeError(f"{sid}: current rendered comic is missing")
 
@@ -273,6 +277,7 @@ def _promote_rerender(
         (current_final, backup_root / "final.png"),
         (current_panels, backup_root / "panels"),
         (current_raw, backup_root / "raw.png"),
+        (current_html, backup_root / "final.html"),
     ]
     promoted = False
     try:
@@ -283,6 +288,10 @@ def _promote_rerender(
         current_panels.parent.mkdir(parents=True, exist_ok=True)
         candidate_panels.rename(current_panels)
         candidate_final.rename(current_final)
+        if candidate_html.exists():
+            current_html.parent.mkdir(parents=True, exist_ok=True)
+            candidate_html.rename(current_html)
+            logger.info(f"Promoted HTML → {current_html}")
         current_raw.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(current_final, current_raw)
         _verify_png(current_final)

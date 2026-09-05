@@ -255,3 +255,27 @@
     - Стёрт мусорный дубликат `stalker_sdxl_lora_f16_lora_f16.ckpt` (Draw Things сам создал его при неудачной попытке загрузить LoRA с override_settings.sd_model_lora)
   - **Tests**: `tests/test_drawthings_client.py` — 21 тест (3 новых: trigger prefix из custom_lora.json, fallback на A1111 tag, no-lora no-trigger). 21/21 OK.
   - **Текущий blocker**: пользователь должен открыть Draw Things GUI window (нажать на иконку в Dock), дождаться загрузки SDXL base (~1-3 мин), и тогда HTTP API поднимется. После этого бот сможет реально использовать Draw Things через trigger prefix.
+
+## 2026-09-05T22:46Z — fix(render): HTML + pages promote в rerender
+
+**Root cause:** `_generate_candidate` всегда писал `pages/`, `pages.json`, `audio/N-page.wav` напрямую в canonical (`comics_dir() / sid`), даже в `mode=rerender` где всё остальное идёт через staging. В результате:
+
+1. `assemble_pages` записывал `pages.json` и `pages/*.jpg` в canonical ДО backup в `_promote_rerender`
+2. Backup уносил canonical (с новыми pages) в `staging/.../backup/panels/`
+3. Promote подменял canonical staging-панелями, в которых pages/ не было
+4. Чистка `backup_root` в finally удаляла новые pages навсегда
+5. HTML `data/comics/<id>.html` оставался устаревшим (или вовсе не обновлялся), потому что `_promote_rerender` его не промоутил вообще
+
+Симптомы у пользователя: «рисунки есть, но html не получилось» — HTML-файл показывал `00-cover.jpg` и `01-page-*.jpg` через JS, но файлов на диске не было → reader показывал пустые страницы.
+
+**Fixes**:
+- `scripts/render_approved.py:_generate_candidate` — `assemble_pages(panels_dir=panel_root, audio_dir=panel_root/audio, output_dir=panel_root)`. В initial mode `panel_root == canonical` (no behavior change). В rerender mode `panel_root == staging` — pages/ и pages.json теперь лежат в staging и переносятся через `candidate_panels.rename(current_panels)`.
+- `scripts/render_approved.py:_promote_rerender` — добавлен `current_html` в backups и `candidate_html.rename(current_html)` после promote. Rollback тоже восстанавливает старый HTML.
+- `data/scenarios/rendered/<id>.json` для 97ede986 — исправлены 5 audio-path'ов (указывали на wiped `data/.staging/...` после promote, перевёл на canonical `data/comics/<id>/audio/`).
+- `data/comics/97ede986/{pages,pages.json,audio/0?-page.wav,*.html}` — вручную регенерированы через `assemble_pages(generate_cover=False)` + `render_reader`.
+- `data/.staging/bot_render_97ede986_*` — orphan staging вычищен в trash.
+
+**Tests**:
+- `tests/test_render_approved.py` — 6/6 OK (включая 2 новых: `test_rerender_promotes_html_and_pages_from_staging`, `test_failed_rerender_rollback_restores_old_html`).
+- Тесты до этого были silently broken (patched `generate_image` который не существует после `4117b80`) — переведены на `minimax_generate_image` + `drawthings_generate_image` + `assemble_pages` + `render_reader` + `synthesize_panel_dialogue` через `ExitStack`.
+- Полный suite: 186/186 OK (0 failures, 0 errors).
