@@ -63,6 +63,34 @@ const STATUS_BADGES = {
   rejected: '🔴 Отклонён',
 };
 
+// ── Image provider state (data/.provider, runtime-only) ─────────────────────
+const PROVIDER_STATE_PATH = path.join(DATA_DIR, '.provider');
+const PROVIDERS = ['minimax', 'drawthings'];
+const DEFAULT_PROVIDER = 'minimax';
+
+function readProviderState() {
+  try {
+    if (fs.existsSync(PROVIDER_STATE_PATH)) {
+      const data = JSON.parse(fs.readFileSync(PROVIDER_STATE_PATH, 'utf-8'));
+      const current = PROVIDERS.includes(data.current) ? data.current : DEFAULT_PROVIDER;
+      return { current, available: [...PROVIDERS] };
+    }
+  } catch (e) {
+    // fall through to default
+  }
+  return { current: DEFAULT_PROVIDER, available: [...PROVIDERS] };
+}
+
+function writeProviderState(state) {
+  const dir = path.dirname(PROVIDER_STATE_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  atomicWrite(PROVIDER_STATE_PATH, state);
+}
+
+function providerStatusLine(state) {
+  return `Текущий: <code>${state.current}</code>`;
+}
+
 function findScenario(id) {
   for (const status of ['draft', 'approved', 'rendered', 'published', 'rejected']) {
     const p = path.join(SCENARIOS_DIR, status, `${id}.json`);
@@ -283,7 +311,8 @@ async function sendScenarioView(ctx, sc, status) {
 // /start
 bot.command('start', async (ctx) => {
   if (!assertAuthorized(ctx)) return;
-  const welcome = 
+  const providerState = readProviderState();
+  const welcome =
     `<b>🤖 Comic Studio Bot</b>\n\n` +
     `Я помогаю создавать, утверждать, рендерить и публиковать серийные комиксы с помощью MiniMax AI.\n\n` +
     `<b>Быстрый старт:</b>\n` +
@@ -294,6 +323,7 @@ bot.command('start', async (ctx) => {
     `• Текст → свободная идея\n` +
     `• URL → статья из интернета\n` +
     `• YouTube → видео с субтитрами\n\n` +
+    `Image provider: <code>${providerState.current}</code> (смена: <code>/provider</code>)\n\n` +
     `Используй <b>/help</b> для списка всех команд.`;
   await ctx.reply(welcome, { parse_mode: 'HTML', ...getMainMenu() });
 });
@@ -826,6 +856,71 @@ bot.command('mcp', async (ctx) => {
   } finally {
     await closeMcpClient(handle);
   }
+});
+
+// ── /provider: переключение image-провайдера (MiniMax ↔ Draw Things) ────────
+//
+// Состояние хранится в data/.provider (runtime, в .gitignore). Кнопка пишет
+// туда выбор пользователя. **NB:** пока py/render/drawthings_client.py не
+// существует (только TODO в AGENTS.md), фактический рендер пойдёт через
+// MiniMax независимо от выбора — кнопка «приготовит» конфиг заранее.
+//
+// Действия:
+//   /provider           — показать текущий + inline-кнопки
+//   нажатие кнопки       — переключить + обновить сообщение
+//
+// Чтобы фактически использовать Draw Things после того, как код написан:
+//   1) написать py/render/drawthings_client.py с тем же интерфейсом, что
+//      py/render/minimax_client.py;
+//   2) обновить py/render/comic_assembler.py, чтобы он читал
+//      data/.provider и выбирал нужный client;
+//   3) перезапустить web/server.js.
+function providerKeyboard(state) {
+  return Markup.inlineKeyboard(
+    state.available.map((p) => {
+      const isActive = p === state.current;
+      const label = isActive ? `🟢 ${p} (active)` : `⚪ ${p}`;
+      return [Markup.button.callback(label, `provider_set:${p}`)];
+    })
+  );
+}
+
+bot.command('provider', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const state = readProviderState();
+  const text =
+    `<b>🖼 Image provider</b>\n\n` +
+    `${providerStatusLine(state)}\n` +
+    `Доступные: <code>${state.available.join('</code>, <code>')}</code>\n\n` +
+    `<i>Состояние хранится в <code>data/.provider</code>.\n` +
+    `Фактический рендер пойдёт через выбранного провайдера только после того, как <code>py/render/drawthings_client.py</code> будет написан (см. AGENTS.md → Image gen provider).</i>`;
+  await ctx.reply(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
+});
+
+bot.action(/^provider_set:(.+)$/, async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+  const newProvider = ctx.match[1];
+  if (!PROVIDERS.includes(newProvider)) {
+    await ctx.answerCbQuery(`❌ Unknown: ${newProvider}`, { show_alert: true });
+    return;
+  }
+  const state = readProviderState();
+  const previous = state.current;
+  state.current = newProvider;
+  writeProviderState(state);
+
+  const text =
+    `<b>🖼 Image provider</b>\n\n` +
+    `Было: <code>${previous}</code> → Стало: <code>${newProvider}</code>\n\n` +
+    `<i>Следующий <code>/mcp render_comic</code> будет использовать этого провайдера (когда код будет готов).</i>`;
+  try {
+    await ctx.editMessageText(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
+  } catch (e) {
+    // если сообщение нельзя отредактировать (например, слишком старое),
+    // шлём новое
+    await ctx.reply(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
+  }
+  await ctx.answerCbQuery(`Provider: ${newProvider}`);
 });
 
 // ── Ingest & Generation Pipeline Helper ────────────────────────────────────────
