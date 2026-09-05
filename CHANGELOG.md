@@ -144,3 +144,16 @@
     - Открыть результат: `open data/comics/.ab/<id>/compare.html`
   - **Verification**: 81/81 Python (62 router+clients + 19 ab_renderer), 6/6 tg-bot, 110/110 web — **197/197 OK**.
   - **Out-of-scope (ещё)**: `/render <id> [--provider]` команда в tg-bot, series consistency bible.
+- `2026-09-05T23:25:00+03:00` — **tg-bot: `/render` команда с выбором провайдера**. Закрывает out-of-scope пункт «/render команда в tg-bot» из tasks 027. Теперь можно запускать рендер прямо из Telegram с override провайдера.
+  - **`tg-bot/bot.js`** `bot.command('render', ...)`: новый handler. Принимает `/render <id>` (default провайдеры из scenario.json / router) или `/render <id> drawthings` (image override) или `/render <id> drawthings lmstudio` (оба override). Валидирует `image_provider ∈ {minimax, drawthings}` и `text_provider ∈ {minimax, lmstudio}`. Проверяет локально (через `findScenario`) что сценарий в статусе `approved` (CLAUDE.md rule 1). Вызывает `POST /api/scenarios/:id/render` с body `{image_provider?, text_provider?}`. Получает job_id, запускает fire-and-forget polling `/api/jobs/:id` каждые 3 сек до 3 минут.
+  - **Polling**: на `succeeded` → ✅ + путь к `/view`; на `failed`/`interrupted` → ❌ с error; на timeout → ⚠️; на BUSY (409) → ⚠️. В `global.isTestEnv` polling пропускается (иначе 60×setTimeout держит event loop).
+  - **`/help`** дополнен секцией «🎨 Render (с выбором провайдера)» с примерами.
+  - **`tg-bot/tests/render.test.js`** (NEW, 10 тестов): no args → usage; invalid providers; scenario not found; not approved; default; drawthings override; оба override; BUSY 409; generic 500; network throw. Все mocked, 0 live calls.
+  - **Usage**:
+    - `/render abc12345` — оба провайдера из scenario.json (router)
+    - `/render abc12345 drawthings` — Draw Things + LoRA, MiniMax для текста
+    - `/render abc12345 drawthings lmstudio` — локальный стек, uncensored
+    - `/render abc12345 minimax` — облако с цензурой
+  - **Verification**: 19/19 tg-bot (10 новых + 5 revision + 4 helpers), 81/81 Python, 110/110 web — **210/210 OK**.
+  - **Backward-compat**: команда новая, никаких regressions.
+  - **Out-of-scope (последний)**: series consistency bible (`bible/character-<name>.md` + character-LoRA workflow).

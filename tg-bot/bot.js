@@ -355,6 +355,13 @@ bot.command('help', async (ctx) => {
     `• Меняет ТОЛЬКО стиль баблов (CSS/Pillow-overlay), панели НЕ перегенерируются\n` +
     `• Занимает 2-5 сек, 0 вызовов MiniMax, статус сценария не меняется\n` +
     `• Доступно для <code>rendered</code> и <code>published</code>\n\n` +
+    `<b>🎨 Render (с выбором провайдера):</b>\n` +
+    `• <code>/render &lt;ID&gt;</code> — рендер с провайдерами из scenario.json / genre-table (default)\n` +
+    `• <code>/render &lt;ID&gt; drawthings</code> — override image provider (Draw Things + LoRA, локально)\n` +
+    `• <code>/render &lt;ID&gt; drawthings lmstudio</code> — override обоих (local stack, uncensored)\n` +
+    `• <code>/render &lt;ID&gt; minimax</code> — облачный рендер, цензура включена\n` +
+    `• Image providers: <code>minimax</code> | <code>drawthings</code>. Text: <code>minimax</code> | <code>lmstudio</code>\n` +
+    `• Требует persisted <code>approved</code> (CLAUDE.md rule 1). Async, до 3 минут polling.\n\n` +
     `<b>📁 HTML комикс и его редактирование:</b>\n` +
     `• Артефакты: <code>data/comics/&lt;ID&gt;.html</code> + <code>data/comics/&lt;ID&gt;/{panel_*.png,layout.json,fonts/}</code>\n` +
     `• Открыть: <code>open data/comics/&lt;ID&gt;.html</code> или Web UI <code>${HELP_WEB_URL}/comics/&lt;ID&gt;.html</code>\n` +
@@ -884,6 +891,194 @@ async function processCreateComic(ctx, input) {
 // ── Inline Actions ────────────────────────────────────────────────────────────
 
 // Image style selection
+// ── /render: запуск рендера approved сценария с выбором провайдера ───────────
+//
+// Использование:
+//   /render <id>                          — провайдеры из scenario.json / router
+//   /render <id> drawthings               — override image provider
+//   /render <id> drawthings lmstudio      — override image + text providers
+//
+// Доступные image providers: minimax (cloud), drawthings (local + LoRA)
+// Доступные text providers:  minimax (cloud), lmstudio (local Magnum)
+//
+// Render требует persisted approval (CLAUDE.md rule 1). Сценарий должен быть
+// в статусе `approved`. Результат — async job, поллим /api/jobs/:id каждые
+// 3 секунды до 3 минут.
+//
+// См. `summary/audit/027_local-uncensored-stack.md` и
+// `openspec/changes/local-uncensored-stack/specs/web-render-provider-passthrough/spec.md`.
+const VALID_IMAGE_PROVIDERS = ['minimax', 'drawthings'];
+const VALID_TEXT_PROVIDERS = ['minimax', 'lmstudio'];
+const RENDER_POLL_MAX_ATTEMPTS = 60;     // 60 * 3s = 3 минуты
+const RENDER_POLL_INTERVAL_MS = 3000;
+
+bot.command('render', async (ctx) => {
+  if (!assertAuthorized(ctx)) return;
+
+  const text = ctx.message.text || '';
+  const body = text.replace(/^\/render(@\w+)?\s*/, '').trim();
+  const parts = body.split(/\s+/);
+
+  // No args → usage
+  if (!parts[0]) {
+    return ctx.reply(
+      '🎨 <b>/render</b> — запуск рендера approved сценария\n\n' +
+      'Использование:\n' +
+      '• <code>/render &lt;ID&gt;</code> — провайдеры из scenario.json / genre-table\n' +
+      '• <code>/render &lt;ID&gt; drawthings</code> — override image provider\n' +
+      '• <code>/render &lt;ID&gt; drawthings lmstudio</code> — override image+text\n\n' +
+      `<b>Image providers:</b> <code>${VALID_IMAGE_PROVIDERS.join('</code>, <code>')}</code>\n` +
+      `<b>Text providers:</b> <code>${VALID_TEXT_PROVIDERS.join('</code>, <code>')}</code>\n\n` +
+      'Сценарий должен быть в статусе <code>approved</code> (CLAUDE.md rule 1).\n' +
+      'После успеха: <code>/view &lt;ID&gt;</code> для просмотра.',
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const scenarioId = parts[0];
+  const imageProvider = parts[1];
+  const textProvider = parts[2];
+
+  // Validate providers
+  if (imageProvider && !VALID_IMAGE_PROVIDERS.includes(imageProvider)) {
+    return ctx.reply(
+      `❌ <b>image_provider</b> должен быть одним из: <code>${VALID_IMAGE_PROVIDERS.join('</code>, <code>')}</code>\n\n` +
+      `Получено: <code>${escapeHtml(imageProvider)}</code>`,
+      { parse_mode: 'HTML' }
+    );
+  }
+  if (textProvider && !VALID_TEXT_PROVIDERS.includes(textProvider)) {
+    return ctx.reply(
+      `❌ <b>text_provider</b> должен быть одним из: <code>${VALID_TEXT_PROVIDERS.join('</code>, <code>')}</code>\n\n` +
+      `Получено: <code>${escapeHtml(textProvider)}</code>`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  // 1. Check scenario exists + is approved (read locally — быстрее, чем HTTP)
+  const found = findScenario(scenarioId);
+  if (!found) {
+    return ctx.reply(
+      `❌ Сценарий <code>${escapeHtml(scenarioId)}</code> не найден.\n\n` +
+      `Проверь ID через <code>/all</code> или <code>/approved</code>.`,
+      { parse_mode: 'HTML' }
+    );
+  }
+  if (found.status !== 'approved') {
+    return ctx.reply(
+      `❌ Render требует статус <code>approved</code>, текущий: <code>${found.status}</code>.\n\n` +
+      `Для <code>draft</code> — сначала утвердите через <code>/view ${escapeHtml(scenarioId)}</code> → ✅.`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  // 2. Build request body
+  const reqBody = {};
+  if (imageProvider) reqBody.image_provider = imageProvider;
+  if (textProvider) reqBody.text_provider = textProvider;
+
+  const providerNote = (imageProvider || textProvider)
+    ? `\n<b>Override:</b> image=<code>${escapeHtml(imageProvider || 'auto')}</code>, ` +
+      `text=<code>${escapeHtml(textProvider || 'auto')}</code>`
+    : `\n<b>Providers:</b> from scenario.json (router default)`;
+
+  const progressMsg = await ctx.reply(
+    `🚀 <b>Render started</b>\n` +
+    `Сценарий: <code>${escapeHtml(scenarioId)}</code>` +
+    providerNote + `\n\n⏳ Polling status...`,
+    { parse_mode: 'HTML' }
+  );
+
+  // 3. Start render через Web API
+  let res;
+  try {
+    res = await fetch(
+      `${WEB_API_URL}/api/scenarios/${encodeURIComponent(scenarioId)}/render`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reqBody),
+      }
+    );
+  } catch (e) {
+    try { await ctx.deleteMessage(progressMsg.message_id); } catch (e) {}
+    return ctx.reply(
+      `❌ Ошибка соединения с Web API: <code>${escapeHtml(e.message)}</code>`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || !data.ok) {
+    try { await ctx.deleteMessage(progressMsg.message_id); } catch (e) {}
+    const code = data?.error?.code || `HTTP ${res.status}`;
+    const message = data?.error?.message || 'unknown';
+    if (code === 'BUSY') {
+      return ctx.reply(
+        `⚠️ Другой рендер уже выполняется для этого сценария. ` +
+        `Проверь позже: <code>/view ${escapeHtml(scenarioId)}</code>.`,
+        { parse_mode: 'HTML' }
+      );
+    }
+    return ctx.reply(
+      `❌ Render не запущен: <code>${escapeHtml(code)}</code> — <i>${escapeHtml(message)}</i>`,
+      { parse_mode: 'HTML' }
+    );
+  }
+
+  const jobId = data.job.id;
+
+  // 4. Polling (fire-and-forget). В тестах (global.isTestEnv=true) пропускаем —
+  //    иначе 60-итерационный setTimeout держит event loop и test runner
+  //    не может завершиться. Тесты проверяют только initial request.
+  if (global.isTestEnv) {
+    return;
+  }
+
+  const pollJob = async () => {
+    for (let i = 0; i < RENDER_POLL_MAX_ATTEMPTS; i++) {
+      await new Promise((r) => setTimeout(r, RENDER_POLL_INTERVAL_MS));
+      try {
+        const jRes = await fetch(`${WEB_API_URL}/api/jobs/${encodeURIComponent(jobId)}`);
+        if (!jRes.ok) continue;
+        const jData = await jRes.json();
+        const status = jData.job?.status;
+        if (status === 'succeeded') {
+          try { await ctx.deleteMessage(progressMsg.message_id); } catch (e) {}
+          const actualImage = jData.job?.image_provider || 'auto';
+          const actualText = jData.job?.text_provider || 'auto';
+          await ctx.reply(
+            `✅ <b>Render завершён!</b>\n\n` +
+            `Сценарий: <code>${escapeHtml(scenarioId)}</code>\n` +
+            `Image provider: <code>${escapeHtml(actualImage)}</code>\n` +
+            `Text provider: <code>${escapeHtml(actualText)}</code>\n\n` +
+            `Используй <code>/view ${escapeHtml(scenarioId)}</code> для просмотра.`,
+            { parse_mode: 'HTML' }
+          );
+          return;
+        } else if (status === 'failed' || status === 'interrupted') {
+          try { await ctx.deleteMessage(progressMsg.message_id); } catch (e) {}
+          await ctx.reply(
+            `❌ <b>Render failed:</b> ${escapeHtml(jData.job?.error?.message || 'unknown')}`,
+            { parse_mode: 'HTML' }
+          );
+          return;
+        }
+      } catch (e) {
+        // network blip — продолжаем поллить
+      }
+    }
+    await ctx.reply(
+      `⚠️ Timeout: render всё ещё выполняется после ${Math.floor(RENDER_POLL_MAX_ATTEMPTS * RENDER_POLL_INTERVAL_MS / 1000)}s. ` +
+      `Проверь позже: <code>/view ${escapeHtml(scenarioId)}</code>.`,
+      { parse_mode: 'HTML' }
+    );
+  };
+
+  pollJob();
+});
+
 bot.action(/^style_(cartoon|anime|comic|realistic|watercolor)$/, async (ctx) => {
   if (!assertAuthorized(ctx)) return;
   const style = ctx.match[1];
