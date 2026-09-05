@@ -226,3 +226,15 @@
   - **В `global.isTestEnv` execAsync skip** — иначе subprocess держит event loop и test runner не закрывается (как было в /render command ранее).
   - **Usage**: `/view <id>` для approved сценария → 3 кнопки рендера появляются. Один клик — рендер.
   - **Verification**: 26/26 tg-bot (5 новых + 10 render + 5 revision + 4 helpers + 2 от lint), 114/114 Python — **140/140 OK**.
+- `2026-09-06T00:13:00+03:00` — **ux(tg-bot): make ✅ Утвердить more prominent + hint text on draft card**. Пользователь путал ✏️ Редактировать с ✅ Утвердить, и думал что кнопки рендера не появляются потому что Draw Things не работает.
+  - **Реальная причина**: render-кнопки появляются только после approve (CLAUDE.md rule 1: "Initial render требует persisted approval"). На draft-карточке ✅ и ✏️ были в одном ряду → случайный клик на ✏️ → потеря flow.
+  - **Что пофикшено в `tg-bot/bot.js`**:
+    - `getScenarioButtons()` для `draft`: `✅ Утвердить и разблокировать рендер` — ОТДЕЛЬНОЙ строкой (label длиннее и явно говорит что разблокирует рендер). `✏️ Редактировать` и `❌ Отклонить` — во втором ряду.
+    - `formatScenarioCard()`: добавлен status-specific hint в конец карточки. draft → «⚠️ Следующий шаг: нажми ✅ Утвердить. Без утверждения кнопки рендера не появятся». approved → «✅ Утверждён. Выбери рендер: 🎨 auto / 🟧 Local stack / ☁️ MiniMax». rendered → «🎨 Отрендерен. Можно опубликовать или перерендерить».
+    - `processCreateComic()`: после `🎉 Сценарий успешно создан!` явно объясняет: «Дальше: на карточке нажми ✅ Утвердить и разблокировать рендер. После этого появятся 3 кнопки рендера».
+  - **`tg-bot/tests/draft_card.test.js`** (NEW, 2 теста): /view на draft → ✅ Утвердить в ОТДЕЛЬНОЙ строке (assertion: `approveRow !== editRow`); /view на approved → hint упоминает Local stack и MiniMax cloud.
+  - **UX flow теперь**:
+    1. Создание → карточка draft с ОДНОЙ большой ✅ кнопкой
+    2. Нажал ✅ → карточка approved с 3 кнопками рендера
+    3. Любой клик → рендер с явным provider
+  - **Verification**: 30/30 tg-bot (2 новых + 28 предыдущих), 114/114 Python — **144/144 OK**.

@@ -178,17 +178,30 @@ function formatScenarioCard(sc, status) {
     text += `\n💬 <b>Правка:</b> <i>${escapeHtml(lastFb.text)}</i>\n`;
   }
 
+  // Подсказка по следующему шагу в зависимости от статуса
+  if (status === 'draft') {
+    text += `\n⚠️ <b>Следующий шаг:</b> нажми «✅ Утвердить и разблокировать рендер» ниже.\n` +
+            `Без утверждения кнопки рендера (с выбором Draw Things / MiniMax) не появятся.`;
+  } else if (status === 'approved') {
+    text += `\n✅ <b>Утверждён.</b> Выбери рендер ниже — 🎨 auto / 🟧 Local stack / ☁️ MiniMax cloud.`;
+  } else if (status === 'rendered') {
+    text += `\n🎨 <b>Отрендерен.</b> Можно опубликовать или перерендерить с другим провайдером.`;
+  }
+
   return text;
 }
 
 function getScenarioButtons(sc, status) {
   const buttons = [];
   if (status === 'draft') {
+    // ✅ Утвердить — ОТДЕЛЬНОЙ строкой (ранее был в одном ряду с ✏️, что приводило к
+    // случайным нажатиям на ✏️ → потеря flow). После утверждения появляются
+    // 3 кнопки рендера с выбором провайдера.
+    buttons.push([Markup.button.callback('✅ Утвердить и разблокировать рендер', `approve:${sc.id}`)]);
     buttons.push([
-      Markup.button.callback('✅ Утвердить', `approve:${sc.id}`),
       Markup.button.callback('✏️ Редактировать', `edit:${sc.id}`),
+      Markup.button.callback('❌ Отклонить', `reject:${sc.id}`),
     ]);
-    buttons.push([Markup.button.callback('❌ Отклонить', `reject:${sc.id}`)]);
   } else if (status === 'approved') {
     buttons.push([
       Markup.button.callback('🎨 Рендер', `render:auto:auto:${sc.id}`),
@@ -885,7 +898,14 @@ async function processCreateComic(ctx, input) {
       const found = findScenario(id);
       if (found) {
         try { await ctx.deleteMessage(statusMsg.message_id); } catch(e) {}
-        await ctx.reply(`🎉 <b>Сценарий успешно создан!</b>`, { parse_mode: 'HTML' });
+        // Подсказка явно: после создания нужно утвердить, иначе render не появится.
+        await ctx.reply(
+          `🎉 <b>Сценарий успешно создан!</b>\n\n` +
+          `<b>Дальше:</b> на карточке ниже нажми <b>✅ Утвердить и разблокировать рендер</b> ` +
+          `(одна большая кнопка сверху). После этого появятся 3 кнопки рендера:\n` +
+          `🎨 <i>auto</i> · 🟧 <i>Local stack (Draw Things + Magnum)</i> · ☁️ <i>MiniMax cloud</i>`,
+          { parse_mode: 'HTML' }
+        );
         await sendScenarioView(ctx, found.scenario, found.status);
         return;
       }
