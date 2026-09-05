@@ -121,3 +121,15 @@
   - **Backward-compat**: сценарии без `text_provider`/`image_provider`/`genre` работают как раньше (default = minimax для обоих). Demo-ветка получает идентичное поведение.
   - **Out-of-scope (отдельные change'ы)**: web/mcp-server passthrough, /render команда в tg-bot, series consistency bible, A/B harness.
   - Audit: `summary/audit/027_local-uncensored-stack.md`. Tasks: `summary/tasks/027_local-uncensored-stack.md`. OpenSpec: `openspec/changes/local-uncensored-stack/`.
+- `2026-09-05T23:15:00+03:00` — **Wire-up 027: provider passthrough через Web API + MCP**. Закрывает out-of-scope пункт «web/mcp-server passthrough» из tasks 027. Теперь можно override'ить провайдеров через REST и MCP-тул, не только через CLI.
+  - **`web/lib/validation.js`**: новые `IMAGE_PROVIDERS = ['minimax', 'drawthings']` и `TEXT_PROVIDERS = ['minimax', 'lmstudio']`; функции `imageProvider(value)` и `textProvider(value)` (None → undefined → router default).
+  - **`web/routes/scenarios.js`** `POST /api/scenarios/:id/render`: принимает опциональные `image_provider` и `text_provider` в JSON body, валидирует, пробрасывает в `enqueueRender`.
+  - **`web/lib/job_manager.js` `enqueueRender`**: принимает `imageProvider`/`textProvider`, сохраняет в job, в `_runRender` добавляет `--image-provider` / `--text-provider` CLI-аргументы в `render_approved.py`. Backward-compat: если поля нет — флаг не добавляется, используется router default.
+  - **`mcp-server/index.js`** tool `render_comic`: новые опциональные параметры `image_provider` (`minimax`/`drawthings`) и `text_provider` (`minimax`/`lmstudio`) в inputSchema, пробрасываются в Web API.
+  - **Примеры вызовов**:
+    - `curl -X POST http://127.0.0.1:3000/api/scenarios/stalker-013/render -H "Content-Type: application/json" -d '{"image_provider":"drawthings"}'`
+    - `/mcp render_comic {"id":"stalker-013","image_provider":"drawthings","text_provider":"lmstudio"}`
+    - Python: `requests.post(..., json={"image_provider": "drawthings"})`
+  - **Tests**: 6/6 tg-bot, 110/110 web, 62/62 Python — **178/178 OK**. Live provider calls: 0.
+  - **Backward-compat**: старые клиенты без `image_provider`/`text_provider` работают как раньше (router default).
+  - **Out-of-scope (ещё)**: `/render <id> [--provider]` команда в tg-bot, series consistency bible, A/B harness.

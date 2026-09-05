@@ -16,11 +16,19 @@ export class JobManager {
     this.accepting = true;
   }
 
-  enqueueRender({ scenarioId, mode, seed, requestId }) {
+  enqueueRender({ scenarioId, mode, seed, requestId, imageProvider, textProvider }) {
     if (!this.accepting) throw unavailable('SERVER_SHUTTING_DOWN', 'Server is shutting down');
     const active = this.jobStore.activeForScenario(scenarioId);
     if (active) throw conflict('BUSY', 'Another job is already active for this scenario', { job_id: active.id, type: active.type });
-    const job = this.jobStore.create({ type: 'render', scenarioId, mode, requestId, seed });
+    const job = this.jobStore.create({
+      type: 'render',
+      scenarioId,
+      mode,
+      requestId,
+      seed,
+      image_provider: imageProvider || null,
+      text_provider: textProvider || null,
+    });
     const promise = this._runRender(job).finally(() => this.promises.delete(job.id));
     this.promises.set(job.id, promise);
     return job;
@@ -52,6 +60,9 @@ export class JobManager {
       args.push('--rerender', '--staging-dir', `${this.config.dataRoot}/.staging/${job.id}`);
       if (job.seed !== undefined) args.push('--seed', String(job.seed));
     }
+    // Local Uncensored Stack (audit 027): пробросить provider override в render_approved.py
+    if (job.image_provider) args.push('--image-provider', job.image_provider);
+    if (job.text_provider) args.push('--text-provider', job.text_provider);
     try {
       const processResult = await this.runner.run(this.config.pythonBin, args, {
         cwd: this.config.projectRoot,

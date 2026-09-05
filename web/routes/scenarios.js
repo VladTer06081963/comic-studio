@@ -61,6 +61,10 @@ export function scenariosRouter({ config, store, lifecycle, runner, jobManager }
   router.post('/:id/render', asyncRoute(async (req, res) => {
     const id = validate.scenarioId(req.params.id);
     const mode = validate.renderMode(req.body?.mode || 'initial');
+    // Local Uncensored Stack: опциональные provider overrides
+    // (если не переданы — provider_router выберет по scenario/genre/env)
+    const imageProvider = validate.imageProvider(req.body?.image_provider);
+    const textProvider = validate.textProvider(req.body?.text_provider);
     const active = jobManager.jobStore?.activeForScenario?.(id);
     if (active) throw conflict('BUSY', 'Another job is already active for this scenario', { job_id: active.id, type: active.type });
     const candidate = lifecycle.renderPolicy(id, mode);
@@ -69,7 +73,14 @@ export function scenariosRouter({ config, store, lifecycle, runner, jobManager }
       renderSeed = validate.seed(req.body.seed, { min: config.minSeed, max: config.maxSeed });
       if (candidate.state === 'approved') await lifecycle.setSeed(id, renderSeed);
     }
-    const job = jobManager.enqueueRender({ scenarioId: id, mode, seed: renderSeed, requestId: req.id });
+    const job = jobManager.enqueueRender({
+      scenarioId: id,
+      mode,
+      seed: renderSeed,
+      imageProvider,
+      textProvider,
+      requestId: req.id,
+    });
     res.status(202).json({ ok: true, job: serializeJob(job), request_id: req.id });
   }));
 

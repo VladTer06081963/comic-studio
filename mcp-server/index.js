@@ -90,12 +90,22 @@ class ComicStudioMcpServer {
           },
           {
             name: "render_comic",
-            description: "Start rendering an approved or rendered scenario",
+            description: "Start rendering an approved or rendered scenario. Optional image_provider/text_provider override (default: from scenario.json / genre-table / env).",
             inputSchema: {
               type: "object",
               properties: {
                 id: { type: "string" },
-                mode: { type: "string", enum: ["initial", "rerender"] }
+                mode: { type: "string", enum: ["initial", "rerender"] },
+                image_provider: {
+                  type: "string",
+                  enum: ["minimax", "drawthings"],
+                  description: "Override image provider. 'drawthings' для локального Draw Things + LoRA, 'minimax' для облака. Default: scenario.json → genre-table → env."
+                },
+                text_provider: {
+                  type: "string",
+                  enum: ["minimax", "lmstudio"],
+                  description: "Override text provider. 'lmstudio' для Magnum (uncensored), 'minimax' для облака. Default: scenario.json → genre-table → env."
+                }
               },
               required: ["id"]
             }
@@ -201,7 +211,9 @@ class ComicStudioMcpServer {
 
         if (name === "render_comic") {
           const res = await this.apiFetch(`/api/scenarios/${args.id}/render`, "POST", {
-            mode: args.mode || "initial"
+            mode: args.mode || "initial",
+            image_provider: args.image_provider,
+            text_provider: args.text_provider,
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         }

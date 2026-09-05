@@ -5,6 +5,10 @@ export const STATES = Object.freeze(['draft', 'approved', 'rejected', 'rendered'
 export const IMAGE_STYLES = Object.freeze(['cartoon', 'anime', 'comic', 'realistic', 'watercolor']);
 export const CAPTION_STYLES = Object.freeze(['bubble', 'star', 'gothic', 'boom', 'memo', 'bar']);
 export const RENDER_MODES = Object.freeze(['initial', 'rerender']);
+// Local Uncensored Stack (audit 027). Если значение не передано — None →
+// provider_router использует scenario.json / genre-table / env.
+export const IMAGE_PROVIDERS = Object.freeze(['minimax', 'drawthings']);
+export const TEXT_PROVIDERS = Object.freeze(['minimax', 'lmstudio']);
 const ID_RE = /^[A-Za-z0-9_-]{4,64}$/;
 
 export function scenarioId(value) {
@@ -32,6 +36,31 @@ export function imageStyle(value = 'comic') {
 
 export function captionStyle(value = 'bubble') {
   if (!CAPTION_STYLES.includes(value)) throw badRequest('INVALID_CAPTION_STYLE', 'Unsupported caption style');
+  return value;
+}
+
+/**
+ * Image provider override. None / undefined → return undefined (router default).
+ * Strict enum otherwise. Use 'drawthings' for local Draw Things + LoRA,
+ * 'minimax' для cloud MiniMax image-01.
+ */
+export function imageProvider(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (!IMAGE_PROVIDERS.includes(value)) {
+    throw badRequest('INVALID_IMAGE_PROVIDER', `image_provider must be one of ${IMAGE_PROVIDERS.join(', ')}`);
+  }
+  return value;
+}
+
+/**
+ * Text provider override. None / undefined → return undefined (router default).
+ * Strict enum otherwise. Use 'lmstudio' для Magnum, 'minimax' для MiniMax-Text-01.
+ */
+export function textProvider(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (!TEXT_PROVIDERS.includes(value)) {
+    throw badRequest('INVALID_TEXT_PROVIDER', `text_provider must be one of ${TEXT_PROVIDERS.join(', ')}`);
+  }
   return value;
 }
 
