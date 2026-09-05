@@ -742,33 +742,45 @@ bot.command('mcode', async (ctx) => {
 //   /mcp approve_scenario {"id": "abc12345"}
 //   /mcp render_comic {"id": "abc12345", "mode": "initial"}
 import {
-  createMcpClient,
-  listTools as mcpListTools,
+  listAllTools,
   callTool as mcpCallTool,
   formatMcpResult,
-  closeMcpClient,
+  closeAll as mcpCloseAll,
+  resolveToolServer,
 } from './mcp-client.js';
 
 bot.command('mcp_list', async (ctx) => {
   if (!assertAuthorized(ctx)) return;
-  const statusMsg = await ctx.reply('🔌 <b>Подключаюсь к comic-studio MCP...</b>', { parse_mode: 'HTML' });
+  const statusMsg = await ctx.reply('🔌 <b>Подключаюсь к MCP серверам...</b>', { parse_mode: 'HTML' });
 
-  let handle;
   try {
-    handle = await createMcpClient();
-    const tools = await mcpListTools(handle);
-    const lines = tools.map((t) => {
-      const params = t.inputSchema?.properties
-        ? Object.keys(t.inputSchema.properties).map((k) => {
-            const required = (t.inputSchema.required || []).includes(k);
-            return `${k}${required ? '*' : ''}`;
-          }).join(', ')
-        : '—';
-      return `<b>${escapeHtml(t.name)}</b>(<i>${escapeHtml(params)}</i>)\n  ${escapeHtml((t.description || '').substring(0, 200))}`;
+    const tools = await listAllTools();
+    // group by server
+    const byServer = {};
+    for (const t of tools) {
+      (byServer[t.server] ||= []).push(t);
+    }
+    const sections = Object.entries(byServer).map(([server, ts]) => {
+      const valid = ts.filter((t) => t.name !== '__error__');
+      const errors = ts.filter((t) => t.name === '__error__');
+      const lines = valid.map((t) => {
+        const params = t.inputSchema?.properties
+          ? Object.keys(t.inputSchema.properties).map((k) => {
+              const required = (t.inputSchema.required || []).includes(k);
+              return `${k}${required ? '*' : ''}`;
+            }).join(', ')
+          : '—';
+        return `<b>${escapeHtml(t.name)}</b>(<i>${escapeHtml(params)}</i>)\n  ${escapeHtml(t.description.substring(0, 200))}`;
+      });
+      let block = `<b>${escapeHtml(server)}</b> (${valid.length} тулов)\n\n${lines.join('\n\n')}`;
+      if (errors.length) {
+        block += `\n\n<i>⚠ ошибка: ${escapeHtml(errors[0].description.substring(0, 200))}</i>`;
+      }
+      return block;
     });
     await ctx.telegram.editMessageText(
       ctx.chat.id, statusMsg.message_id, null,
-      `🔌 <b>comic-studio MCP — ${tools.length} тулов</b>\n\n${lines.join('\n\n')}`,
+      `🔌 <b>MCP — ${Object.keys(byServer).length} сервер(ов), ${tools.filter(t => t.name !== '__error__').length} тулов</b>\n\n${sections.join('\n\n—\n\n')}`,
       { parse_mode: 'HTML' }
     );
   } catch (e) {
@@ -778,7 +790,7 @@ bot.command('mcp_list', async (ctx) => {
       { parse_mode: 'HTML' }
     );
   } finally {
-    await closeMcpClient(handle);
+    await mcpCloseAll();
   }
 });
 
@@ -794,13 +806,15 @@ bot.command('mcp', async (ctx) => {
       'Использование:\n' +
       '• <code>/mcp &lt;tool&gt;</code> — вызов без аргументов\n' +
       '• <code>/mcp &lt;tool&gt; {"key": "value"}</code> — вызов с JSON-аргументами\n\n' +
+      'Серверы берутся из <code>~/.minimax/mcp.json</code>. Сейчас: ' +
+      '<code>comic-studio</code> (10 тулов) + <code>draw-things</code> ' +
+      '(2 тула: <code>generate_image</code>, <code>get_options</code>).\n\n' +
       'Сначала посмотри список тулов: <code>/mcp_list</code>',
       { parse_mode: 'HTML' }
     );
   }
 
   // Парсим: первое слово — tool name, остальное — JSON args (опционально).
-  // Поддерживаем также формат "tool {...json...}" без пробелов.
   let toolName, jsonPart;
   const spaceIdx = body.indexOf(' ');
   if (spaceIdx === -1) {
@@ -823,14 +837,13 @@ bot.command('mcp', async (ctx) => {
   }
 
   const statusMsg = await ctx.reply(
-    `🔌 <b>MCP</b> <code>${escapeHtml(toolName)}</code> ${Object.keys(args).length ? `<i>(${Object.keys(args).length} args)</i>` : ''}\n\n⏳ Вызываю...`,
+    `🔌 <b>MCP</b> <code>${escapeHtml(toolName)}</code> ${Object.keys(args).length ? `<i>(${Object.keys(args).length} args)</i>` : ''}\n\n⏳ Резолвлю сервер и вызываю...`,
     { parse_mode: 'HTML' }
   );
 
-  let handle;
+  let result;
   try {
-    handle = await createMcpClient();
-    const result = await mcpCallTool(handle, toolName, args);
+    result = await mcpCallTool(toolName, args);
     const formatted = formatMcpResult(result);
     try { await ctx.deleteMessage(statusMsg.message_id); } catch (e) {}
     if (result.isError) {
@@ -854,27 +867,21 @@ bot.command('mcp', async (ctx) => {
       await ctx.reply(`❌ MCP error: <pre>${escapeHtml(errMsg)}</pre>`, { parse_mode: 'HTML' });
     }
   } finally {
-    await closeMcpClient(handle);
+    await mcpCloseAll();
   }
 });
 
 // ── /provider: переключение image-провайдера (MiniMax ↔ Draw Things) ────────
 //
 // Состояние хранится в data/.provider (runtime, в .gitignore). Кнопка пишет
-// туда выбор пользователя. **NB:** пока py/render/drawthings_client.py не
-// существует (только TODO в AGENTS.md), фактический рендер пойдёт через
-// MiniMax независимо от выбора — кнопка «приготовит» конфиг заранее.
+// туда выбор пользователя. Кроме того, /mcp draw_things generate_image
+// уже доступен через бота (см. /mcp_list) — для ad-hoc проверок без
+// рендера. Render-side wiring (comic_assembler.py читает data/.provider) —
+// отдельная задача (см. summary/tasks/025).
 //
 // Действия:
 //   /provider           — показать текущий + inline-кнопки
 //   нажатие кнопки       — переключить + обновить сообщение
-//
-// Чтобы фактически использовать Draw Things после того, как код написан:
-//   1) написать py/render/drawthings_client.py с тем же интерфейсом, что
-//      py/render/minimax_client.py;
-//   2) обновить py/render/comic_assembler.py, чтобы он читал
-//      data/.provider и выбирал нужный client;
-//   3) перезапустить web/server.js.
 function providerKeyboard(state) {
   return Markup.inlineKeyboard(
     state.available.map((p) => {

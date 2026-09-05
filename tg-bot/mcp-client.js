@@ -1,92 +1,184 @@
-// tg-bot/mcp-client.js — тонкий wrapper вокруг comic-studio MCP server.
+// tg-bot/mcp-client.js — multi-server MCP client.
 //
-// Подключается к MCP-серверу через stdio (тот же транспорт, что mcp-server/index.js
-// уже предоставляет). Позволяет боту вызывать типизированные MCP-тулы напрямую,
-// без LLM в горячем пути. Дополняет /mcode команду: /mcp — для типизированных
-// операций (быстро, идемпотентно), /mcode — для задач, требующих рассуждений.
+// Подключается ко всем MCP-серверам из ~/.minimax/mcp.json (или $MINIMAX_MCP_CONFIG)
+// и предоставляет единый API для бота:
 //
-// ENV:
-//   COMIC_STUDIO_PROJECT_ROOT  — путь к проекту (default: ../ относительно tg-bot)
+//   import { listAllTools, callTool, closeAll, resolveToolServer, formatMcpResult }
+//     from './mcp-client.js';
 //
-// Использование:
+//   const tools = await listAllTools();          // [ { server, name, description, inputSchema } ]
+//   const r = await callTool('generate_image', { prompt: 'a cat' });
+//   await closeAll();
 //
-//   import { createMcpClient, listTools, callTool, closeMcpClient } from './mcp-client.js';
+// Серверы ленивые — transport создаётся при первом вызове и кэшируется.
+// При вызове callTool без явного server берётся первый сервер, у которого
+// есть инструмент с таким именем; в multi-server среде используй resolveToolServer
+// для разрешения неоднозначностей.
 //
-//   const client = await createMcpClient();
-//   const tools = await listTools(client);
-//   const result = await callTool(client, 'list_scenarios', { status: 'draft' });
-//   await closeMcpClient(client);
-//
-// Все результаты — JSON-сериализованные строки (для отправки в Telegram).
+// Ошибки и метаданные: каждый callTool возвращает MCP-совместимый
+// { content: [...], isError: bool }; formatMcpResult склеивает content в
+// текст для отправки в Telegram.
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
-const PROJECT_ROOT =
-  process.env.COMIC_STUDIO_PROJECT_ROOT ||
-  new URL('..', import.meta.url).pathname;
+const MCP_CONFIG_PATH =
+  process.env.MINIMAX_MCP_CONFIG ||
+  path.join(os.homedir(), '.minimax', 'mcp.json');
 
-const MCP_SERVER_PATH = `${PROJECT_ROOT}mcp-server/index.js`;
+// Default node binary — same as Hermes uses. Override via env if needed.
+const NODE_BIN = process.env.MCP_NODE_BIN || '/Users/vladteresena/.hermes/node/bin/node';
 
 /**
- * Создаёт MCP-клиент и подключается к comic-studio MCP-серверу через stdio.
- * Возвращает { client, transport }.
+ * Read mcp.json and return a { serverName: { command, args, cwd, env } } map.
+ * Throws on parse error or missing file (intentional — fail fast).
  */
-export async function createMcpClient() {
-  const transport = new StdioClientTransport({
-    command: '/Users/vladteresena/.hermes/node/bin/node',
-    args: [MCP_SERVER_PATH],
-    cwd: PROJECT_ROOT,
-  });
-
-  const client = new Client(
-    {
-      name: 'comic-studio-tg-bot',
-      version: '1.0.0',
-    },
-    {
-      capabilities: {},
-    }
+function readMcpConfig() {
+  const raw = fs.readFileSync(MCP_CONFIG_PATH, 'utf-8');
+  const parsed = JSON.parse(raw);
+  const servers = parsed.mcpServers || parsed.mcp_servers || {};
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, cfg]) => [
+      name,
+      {
+        command: cfg.command,
+        args: cfg.args || [],
+        cwd: cfg.cwd,
+        env: cfg.env || {},
+      },
+    ])
   );
-
-  await client.connect(transport);
-  return { client, transport };
 }
 
-export async function closeMcpClient(handle) {
-  if (!handle) return;
-  try {
-    await handle.client.close();
-  } catch (e) {
-    // ignore — процесс может уже быть мёртв
+/**
+ * Lazy registry: serverName → { client, transport } (created on demand).
+ * Lazy keeps startup fast and avoids spawning servers that won't be used
+ * in a given session.
+ */
+const registry = new Map();
+let configCache = null;
+
+function getConfig() {
+  if (!configCache) configCache = readMcpConfig();
+  return configCache;
+}
+
+export function getMcpClient(serverName) {
+  if (registry.has(serverName)) return registry.get(serverName);
+  const cfg = getConfig()[serverName];
+  if (!cfg) {
+    throw new Error(
+      `MCP server "${serverName}" not found in ${MCP_CONFIG_PATH}. ` +
+        `Available: ${Object.keys(getConfig()).join(', ') || '(none)'}`
+    );
   }
+  const transport = new StdioClientTransport({
+    command: cfg.command,
+    args: cfg.args,
+    cwd: cfg.cwd,
+    env: cfg.env,
+  });
+  const client = new Client(
+    { name: 'comic-studio-tg-bot', version: '1.1.0' },
+    { capabilities: {} }
+  );
+  return { client, transport, _pending: true };
+}
+
+async function connect(serverName) {
+  if (registry.has(serverName)) {
+    const entry = registry.get(serverName);
+    if (entry._pending) {
+      await entry.client.connect(entry.transport);
+      entry._pending = false;
+    }
+    return entry;
+  }
+  const entry = getMcpClient(serverName);
+  await entry.client.connect(entry.transport);
+  entry._pending = false;
+  registry.set(serverName, entry);
+  return entry;
+}
+
+export async function closeAll() {
+  const closers = [];
+  for (const [, entry] of registry) {
+    if (!entry._pending) {
+      closers.push(
+        entry.client.close().catch(() => {
+          // process may already be dead; ignore
+        })
+      );
+    }
+  }
+  await Promise.all(closers);
+  registry.clear();
 }
 
 /**
- * Возвращает список тулов [{ name, description, inputSchema }].
+ * List tools across all configured servers.
+ * Returns: [ { server, name, description, inputSchema } ]
  */
-export async function listTools(handle) {
-  const { tools } = await handle.client.listTools();
-  return tools.map((t) => ({
-    name: t.name,
-    description: t.description || '',
-    inputSchema: t.inputSchema || { type: 'object', properties: {} },
-  }));
+export async function listAllTools() {
+  const config = getConfig();
+  const out = [];
+  for (const name of Object.keys(config)) {
+    try {
+      const entry = await connect(name);
+      const { tools } = await entry.client.listTools();
+      for (const t of tools) {
+        out.push({
+          server: name,
+          name: t.name,
+          description: t.description || '',
+          inputSchema: t.inputSchema || { type: 'object', properties: {} },
+        });
+      }
+    } catch (e) {
+      // one server failing shouldn't kill the whole listing
+      out.push({ server: name, name: '__error__', description: String(e.message || e) });
+    }
+  }
+  return out;
 }
 
 /**
- * Вызывает MCP-тул по имени. args — plain object.
- * Возвращает { content, isError } в формате MCP (content — массив блоков).
- * Для отправки в Telegram — JSON.stringify result.
+ * Find which server has a tool with this name. Returns server name or null.
  */
-export async function callTool(handle, name, args = {}) {
-  const result = await handle.client.callTool({ name, arguments: args });
-  return result;
+export function resolveToolServer(toolName, tools) {
+  const candidates = (tools || []).filter((t) => t.name === toolName);
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0].server;
+  return candidates[0].server; // pick first on conflict; bot can warn user
 }
 
 /**
- * Удобная обёртка: возвращает JSON-строку, безопасную для вставки в Telegram.
- * Если результат — массив текстовых блоков, склеивает их.
+ * Call a tool by name. If `serverName` is given, dispatch to that server.
+ * Otherwise pick the first server that has the tool.
+ */
+export async function callTool(name, args = {}, serverName = null) {
+  let server = serverName;
+  if (!server) {
+    const tools = await listAllTools();
+    server = resolveToolServer(name, tools);
+    if (!server) {
+      throw new Error(
+        `Tool "${name}" not found in any configured MCP server. ` +
+          `Try /mcp_list to see what's available.`
+      );
+    }
+  }
+  const entry = await connect(server);
+  return entry.client.callTool({ name, arguments: args });
+}
+
+/**
+ * Format MCP tool result into a single string for Telegram.
+ * Concatenates text blocks, notes image blocks.
  */
 export function formatMcpResult(result) {
   if (!result) return '(нет вывода)';
@@ -105,4 +197,29 @@ export function formatMcpResult(result) {
     })
     .join('\n');
   return text || '(нет вывода)';
+}
+
+// ── Backwards-compat exports (old single-server API) ─────────────────────────
+// The original mcp-client.js exposed createMcpClient / listTools / callTool /
+// closeMcpClient. Keep them as thin wrappers so existing code still works.
+
+export async function createMcpClient() {
+  // Returns the comic-studio handle (most common case). New code should use
+  // connect() directly or the new getMcpClient() + listAllTools() flow.
+  const { client, transport } = await connect('comic-studio');
+  return { client, transport };
+}
+
+export async function listTools(handle) {
+  if (handle) {
+    const { tools } = await handle.client.listTools();
+    return tools.map((t) => ({
+      name: t.name,
+      description: t.description || '',
+      inputSchema: t.inputSchema || { type: 'object', properties: {} },
+    }));
+  }
+  return listAllTools().then((all) =>
+    all.filter((t) => t.name !== '__error__').map(({ server, ...rest }) => rest)
+  );
 }
