@@ -249,10 +249,8 @@ def generate_scenario(
         )
         primary_fn = _call_lmstudio_chat if chosen_text_provider == "lmstudio" else _call_minimax_chat
         result, used_provider, fallback_used = try_with_fallback(
-            primary_fn=primary_fn,
-            fallback_fn=_call_minimax_chat,
-            primary_provider=chosen_text_provider,
-            fallback_provider="minimax",
+            primary_fn, _call_minimax_chat,
+            chosen_text_provider, "minimax",
             SYSTEM_PROMPT, user_msg,
         )
         raw = result
