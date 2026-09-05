@@ -893,15 +893,20 @@ bot.command('provider', async (ctx) => {
     `${providerStatusLine(state)}\n` +
     `Доступные: <code>${state.available.join('</code>, <code>')}</code>\n\n` +
     `<i>Состояние хранится в <code>data/.provider</code>.\n` +
-    `Фактический рендер пойдёт через выбранного провайдера только после того, как <code>py/render/drawthings_client.py</code> будет написан (см. AGENTS.md → Image gen provider).</i>`;
+    `Переключение действует на следующий <code>/mcp render_comic</code>.\n` +
+    `Для <code>drawthings</code> используется <code>draw-things-mcp</code> (отдельный MCP-сервер, уже зарегистрирован в Hermes).</i>`;
   await ctx.reply(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
 });
 
 bot.action(/^provider_set:(.+)$/, async (ctx) => {
+  // ⚠️ answerCbQuery() В САМОМ НАЧАЛЕ — иначе Telegram timeout'ит и показывает
+  // "text copied" / loading-спиннер до бесконечности, пока бот думает.
+  await ctx.answerCbQuery();
+
   if (!assertAuthorized(ctx)) return;
   const newProvider = ctx.match[1];
   if (!PROVIDERS.includes(newProvider)) {
-    await ctx.answerCbQuery(`❌ Unknown: ${newProvider}`, { show_alert: true });
+    await ctx.reply(`❌ Unknown: <code>${escapeHtml(newProvider)}</code>`, { parse_mode: 'HTML' });
     return;
   }
   const state = readProviderState();
@@ -912,7 +917,8 @@ bot.action(/^provider_set:(.+)$/, async (ctx) => {
   const text =
     `<b>🖼 Image provider</b>\n\n` +
     `Было: <code>${previous}</code> → Стало: <code>${newProvider}</code>\n\n` +
-    `<i>Следующий <code>/mcp render_comic</code> будет использовать этого провайдера (когда код будет готов).</i>`;
+    `<i>Следующий <code>/mcp render_comic</code> будет использовать этого провайдера.\n` +
+    `Для <code>drawthings</code> — draw-things-mcp на <code>:7860</code>.</i>`;
   try {
     await ctx.editMessageText(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
   } catch (e) {
@@ -920,7 +926,6 @@ bot.action(/^provider_set:(.+)$/, async (ctx) => {
     // шлём новое
     await ctx.reply(text, { parse_mode: 'HTML', ...providerKeyboard(state) });
   }
-  await ctx.answerCbQuery(`Provider: ${newProvider}`);
 });
 
 // ── Ingest & Generation Pipeline Helper ────────────────────────────────────────
