@@ -8,6 +8,7 @@ from unittest.mock import patch
 from py.scenario.lmstudio_client import LMRuntimeError
 from py.scenario.provider_router import (
     GENRE_DEFAULT,
+    TONE_TO_GENRE,
     mark_fallback,
     pick_image_provider,
     pick_text_provider,
@@ -52,6 +53,44 @@ class TestPickTextProvider(unittest.TestCase):
         self.assertEqual(
             pick_text_provider({"genre": "kids", "text_provider": "lmstudio"}),
             "lmstudio",
+        )
+
+    def test_tone_dark_maps_to_stalker(self):
+        """`tone=dark` (без явного genre) → lmstudio + drawthings."""
+        self.assertEqual(
+            pick_text_provider({"tone": "dark"}), "lmstudio"
+        )
+        self.assertEqual(
+            pick_image_provider({"tone": "dark"}), "drawthings"
+        )
+
+    def test_tone_funny_maps_to_comedy(self):
+        """`tone=funny` → MiniMax (нейтральный)."""
+        self.assertEqual(pick_text_provider({"tone": "funny"}), "minimax")
+        self.assertEqual(pick_image_provider({"tone": "funny"}), "minimax")
+
+    def test_tone_epic_maps_to_military(self):
+        """`tone=epic` → lmstudio + drawthings (через military genre)."""
+        self.assertEqual(pick_text_provider({"tone": "epic"}), "lmstudio")
+        self.assertEqual(pick_image_provider({"tone": "epic"}), "drawthings")
+
+    def test_tone_unknown_falls_to_minimax(self):
+        """Неизвестный тон (не в TONE_TO_GENRE) → default = MiniMax."""
+        self.assertEqual(pick_text_provider({"tone": "experimental"}), "minimax")
+        self.assertEqual(pick_image_provider({"tone": "experimental"}), "minimax")
+
+    def test_explicit_genre_wins_over_tone(self):
+        """Если оба поля есть — genre побеждает tone (tone это fallback)."""
+        self.assertEqual(
+            pick_text_provider({"tone": "dark", "genre": "comedy"}),
+            "minimax",  # comedy genre выигрывает
+        )
+
+    def test_explicit_provider_wins_over_tone_and_genre(self):
+        """Явный text_provider всегда побеждает."""
+        self.assertEqual(
+            pick_text_provider({"tone": "dark", "genre": "stalker-horror", "text_provider": "minimax"}),
+            "minimax",
         )
 
 

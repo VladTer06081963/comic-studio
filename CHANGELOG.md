@@ -208,3 +208,9 @@
   - `bible/character-<name>.md` workflow (отдельный change, требует редактуры)
   - `data/.provider` history cleanup (был удалён в 026, но файлы от старых сессий могут лежать — `rm -f data/.provider` если что)
   - Demo-ветка: НЕ трогали, остаётся MiniMax-only (поведение совпадает с default router)
+- `2026-09-05T23:58:00+03:00` — **fix(provider-router): tone → genre mapping**. Бот не мог автоматически выбрать Draw Things для сценариев с `tone=dark`, потому что `pick_text_provider` смотрел только на `scenario["genre"]`, а в `writer.py` передавался `tone` напрямую.
+  - **`py/scenario/provider_router.py`**: добавлен `TONE_TO_GENRE` маппинг: `dark` → `stalker-horror`, `epic` → `military`, `whimsical` → `stalker-horror`, `funny` → `comedy`, `educational` → `educational`. Обновлён `_pick()`: после проверки `scenario["genre"]` проверяется `scenario["tone"]` через `TONE_TO_GENRE`. Приоритет: `text_provider override > scenario.text_provider > scenario.genre > scenario.tone → TONE_TO_GENRE > env > "minimax"`.
+  - **`py/scenario/writer.py`**: вместо `pick_text_provider({"genre": tone})` теперь `pick_text_provider({"tone": tone})` (tone используется как proxy для genre).
+  - **`tests/test_provider_router.py`**: +7 тестов (total 34): tone=dark → lmstudio+drawthings, tone=funny → minimax, tone=epic → lmstudio+drawthings, tone=unknown → minimax, genre>tone приоритет, explicit_provider>tone+genre.
+  - **Теперь работает через Telegram**: бот выбирает `tone` через inline-кнопки (epic/funny/educational/dark/whimsical) → router сам триггерит `stalker-horror` для `tone=dark` → Draw Things + Magnum. **Override `/render <id> drawthings lmstudio` больше не нужен** для типичных Stalker-сценариев.
+  - **Verification**: 114/114 Python (62+19+27+6 новых), 19/19 tg-bot — все OK.

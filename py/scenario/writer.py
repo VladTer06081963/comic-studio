@@ -221,7 +221,9 @@ def generate_scenario(
     if narrative_text:
         # === Этап 2a: text-провайдер извлекает структуру из narrative ===
         from py.scenario.provider_router import pick_text_provider, try_with_fallback, mark_fallback
-        chosen_text_provider = text_provider or pick_text_provider({"genre": tone})
+        # Передаём тон как proxy для genre (router сам маппит TONE_TO_GENRE)
+        # Если text_provider передан явно — он побеждает.
+        chosen_text_provider = text_provider or pick_text_provider({"tone": tone})
         logger.info(f"Stage 2a: {chosen_text_provider} extracting structure from narrative")
         from py.scenario.structure_extractor import extract_panels
         scenario = extract_panels(
@@ -237,8 +239,9 @@ def generate_scenario(
     else:
         # === Этап 2b: text-провайдер генерирует сценарий напрямую (legacy режим) ===
         from py.scenario.provider_router import pick_text_provider, try_with_fallback, mark_fallback
-        from py.scenario.lmstudio_client import _call_lmstudio_chat, LMRuntimeError as _LMErr
-        chosen_text_provider = text_provider or pick_text_provider({"genre": tone})
+        from py.scenario.lmstudio_client import _call_lmstudio_chat
+        # Передаём тон как proxy для genre. Router сам маппит TONE_TO_GENRE.
+        chosen_text_provider = text_provider or pick_text_provider({"tone": tone})
         logger.info(f"Direct {chosen_text_provider} generation (no Magnum narrative)")
         user_msg = (
             f"Контекст:\n\n{bounded}\n\n"

@@ -41,6 +41,20 @@ GENRE_DEFAULT: dict[str, dict[str, str]] = {
 }
 
 
+# Маппинг tone (из `writer.py`) → genre (для `pick_text_provider`).
+# Используется только если scenario.json НЕ имеет явного `text_provider` /
+# `image_provider` поля. Tone — это первое приближение для genre-routing.
+# Сценарии со stalker-сюжетом обычно выбирают tone="dark" → мы хотим
+# чтобы router выбрал Draw Things + Magnum без ручного override.
+TONE_TO_GENRE: dict[str, str] = {
+    "dark":         "stalker-horror",
+    "epic":         "military",
+    "whimsical":    "stalker-horror",  # S.T.A.L.K.E.R.-серия часто whimsical + dark
+    "funny":        "comedy",
+    "educational":  "educational",
+}
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def pick_text_provider(scenario: Optional[dict] = None, override: Optional[str] = None) -> str:
@@ -65,6 +79,9 @@ def _pick(kind: str, scenario: Optional[dict], override: Optional[str]) -> str:
     `kind` определяет, какое поле смотрим в scenario ('text_provider' / 'image_provider'),
     какой env читаем ('DEFAULT_TEXT_PROVIDER' / 'DEFAULT_IMAGE_PROVIDER'),
     и какое значение берём из GENRE_DEFAULT (['text'] / ['image']).
+
+    Приоритет: override > scenario.{kind}_provider > scenario.genre >
+               TONE_TO_GENRE[scenario.tone] > env > "minimax".
     """
     scenario_field = f"{kind}_provider"
     env_var = f"DEFAULT_{kind.upper()}_PROVIDER"
@@ -78,18 +95,27 @@ def _pick(kind: str, scenario: Optional[dict], override: Optional[str]) -> str:
     if scenario and scenario.get(scenario_field):
         return scenario[scenario_field]
 
-    # 3. Genre table
+    # 3. Genre table (explicit scenario.genre)
     if scenario:
-        genre = scenario.get("genre", "default")
-        mapping = GENRE_DEFAULT.get(genre, GENRE_DEFAULT["default"])
-        return mapping[genre_key]
+        genre = scenario.get("genre")
+        if genre:
+            mapping = GENRE_DEFAULT.get(genre, GENRE_DEFAULT["default"])
+            return mapping[genre_key]
 
-    # 4. Env override
+        # 4. Tone → genre mapping (fallback если нет явного genre)
+        tone = scenario.get("tone")
+        if tone:
+            mapped_genre = TONE_TO_GENRE.get(tone)
+            if mapped_genre:
+                mapping = GENRE_DEFAULT.get(mapped_genre, GENRE_DEFAULT["default"])
+                return mapping[genre_key]
+
+    # 5. Env override
     env_val = os.environ.get(env_var)
     if env_val:
         return env_val
 
-    # 5. Last resort
+    # 6. Last resort
     return "minimax"
 
 
