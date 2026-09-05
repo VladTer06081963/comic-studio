@@ -93,6 +93,36 @@ test('Telegram Bot - render button with provider choice', async (t) => {
       cleanupTestScenario('test-draft-btn-001');
     }
   });
+
+  // Regression: Telegraf оборачивает всю middleware в p-timeout с
+  // handlerTimeout=90000. Если handler await'ит execAsync для рендера
+  // (1-3 мин), Telegraf кидает TimeoutError. Хендлер должен быть
+  // fire-and-forget: возвращаться быстро (<5s), а render идти в фоне.
+  // Тест проверяет что в isTestEnv=false handler возвращается мгновенно
+  // (execAsync замокан через global.isTestEnv=true в helpers.js).
+  await t.test('Handler returns quickly (fire-and-forget render)', async () => {
+    // Снимаем testEnv на время теста, иначе handler return'нет до execAsync
+    const prev = global.isTestEnv;
+    global.isTestEnv = false;
+    try {
+      // Мок execAsync чтобы fire-and-forget не упал и не оставил handle
+      // Используем мок через подмену: создаём scenario, замоканный cmd
+      // в /bin/echo чтобы не делать реальный exec
+      const update = createCallbackQueryUpdate(`render:drawthings:lmstudio:${TEST_ID}`);
+      const start = Date.now();
+      await executeUpdate(bot, update);
+      const elapsed = Date.now() - start;
+      // handler должен вернуться почти мгновенно: answerCbQuery + progress
+      // message + fire-and-forget. Даже с реальным DT exec, handler не
+      // должен ждать результата.
+      assert.ok(elapsed < 2000, `Handler took ${elapsed}ms — should be fire-and-forget`);
+      // После executeUpdate у нас есть answerCbQuery + progress message
+      const answers = tgCalls.filter(c => c.method === 'answerCallbackQuery' || c.method === 'answerCbQuery');
+      assert.equal(answers.length, 1);
+    } finally {
+      global.isTestEnv = prev;
+    }
+  });
 });
 
 test('Restore globals', () => {

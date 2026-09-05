@@ -289,3 +289,15 @@
 **Fix**: `tg-bot/bot.js` — `process.on('unhandledRejection', ...)` и `process.on('uncaughtException', ...)` ловят stale-callback ошибки и логируют как warning (`[tg-bot] Stale callback ignored: ...`), не падая. Реальные ошибки (другие rejection/exception) по-прежнему пробрасываются в console.error.
 
 **Tests**: `tg-bot/tests/stale_callback.test.js` — новый тест мокает `bot.telegram.callApi` чтобы `answerCallbackQuery` бросал 400, проверяет что process не падает (watchdog ловит только non-stale ошибки). 32/32 tg-bot тестов OK.
+
+## 2026-09-05T22:51Z — fix(tg-bot): fire-and-forget для render/publish handlers
+
+**Симптом**: после прошлого фикса (global unhandledRejection handler) бот перестал падать на stale callback'ах, но начал падать с `Failed to launch bot: TimeoutError: Promise timed out after 90000 milliseconds` при нажатии 🟧 Local stack.
+
+**Root cause**: Telegraf оборачивает всю middleware цепочку в `p-timeout(Promise.resolve(this.middleware()(ctx, anoop)), this.options.handlerTimeout)` где `handlerTimeout = 90000` (90 сек, default в `telegraf/lib/telegraf.js:46`). Render handler `await execAsync(cmd, ...)` ждёт завершения Draw Things inference (1-3 мин) — handler вылетал с TimeoutError после 90 сек. Publish handler с `node --env-file=.env scripts/publish_rendered.js` тоже ждёт синхронно.
+
+**Fix**: оба handler'а обёрнуты в `void (async () => { ... })()` IIFE. Синхронная часть (answerCbQuery + progress message) уходит как раньше, render/publish идёт в фоне, результат публикуется отдельными `ctx.reply()` вызовами. `global.isTestEnv` return'ит до IIFE — тесты продолжают работать без изменений (проверяют только progress message).
+
+**Tests**:
+- `tests/render_button.test.js` — новый тест `Handler returns quickly (fire-and-forget render)` проверяет что handler возвращается <2000ms даже при `isTestEnv=false` (т.е. execAsync действительно сработал бы).
+- Полный tg-bot suite: 33/33 OK.

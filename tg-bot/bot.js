@@ -1484,33 +1484,40 @@ bot.action(/^render:(auto|minimax|drawthings):(auto|minimax|lmstudio):(.+)$/, as
     return;
   }
 
-  try {
-    const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
-    try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+  // Telegraf оборачивает всю middleware в p-timeout с handlerTimeout=90000.
+  // Draw Things рендер занимает 1-3 мин — handler вылетал с TimeoutError
+  // и крашил процесс. Делаем fire-and-forget: ответ на callback + progress
+  // message уходят синхронно, render идёт в фоне, результат публикуется
+  // отдельными ctx.reply() вызовами.
+  void (async () => {
+    try {
+      const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
+      try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
 
-    const updated = findScenario(id);
-    if (updated) {
-      // Проверяем, был ли fallback (т.е. провайдер из кнопки упал и переключился)
-      const imgFallback = updated.scenario.image_provider_fallback;
-      const txtFallback = updated.scenario.text_provider_fallback;
-      const fallbackWarning = (imgFallback || txtFallback)
-        ? `\n\n⚠️ <b>Fallback сработал:</b> ${imgFallback ? `image: ${escapeHtml(imageProvider)} → ${escapeHtml(imgFallback)}` : ''}${imgFallback && txtFallback ? '; ' : ''}${txtFallback ? `text: ${escapeHtml(textProvider)} → ${escapeHtml(txtFallback)}` : ''}\n` +
-          `Запрошенный провайдер был недоступен. Проверь Draw Things / LM Studio.`
-        : '';
+      const updated = findScenario(id);
+      if (updated) {
+        // Проверяем, был ли fallback (т.е. провайдер из кнопки упал и переключился)
+        const imgFallback = updated.scenario.image_provider_fallback;
+        const txtFallback = updated.scenario.text_provider_fallback;
+        const fallbackWarning = (imgFallback || txtFallback)
+          ? `\n\n⚠️ <b>Fallback сработал:</b> ${imgFallback ? `image: ${escapeHtml(imageProvider)} → ${escapeHtml(imgFallback)}` : ''}${imgFallback && txtFallback ? '; ' : ''}${txtFallback ? `text: ${escapeHtml(textProvider)} → ${escapeHtml(txtFallback)}` : ''}\n` +
+            `Запрошенный провайдер был недоступен. Проверь Draw Things / LM Studio.`
+          : '';
 
-      await ctx.reply(
-        `🎉 <b>Рендер завершён!</b>${fallbackWarning}`,
-        { parse_mode: 'HTML' }
-      );
-      await sendScenarioView(ctx, updated.scenario, updated.status);
-    } else {
-      await ctx.reply(`✅ Комикс <code>${id}</code> успешно отрендерен!`, { parse_mode: 'HTML' });
+        await ctx.reply(
+          `🎉 <b>Рендер завершён!</b>${fallbackWarning}`,
+          { parse_mode: 'HTML' }
+        );
+        await sendScenarioView(ctx, updated.scenario, updated.status);
+      } else {
+        await ctx.reply(`✅ Комикс <code>${id}</code> успешно отрендерен!`, { parse_mode: 'HTML' });
+      }
+    } catch (err) {
+      console.error('Render error:', err);
+      try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+      await ctx.reply(`❌ <b>Ошибка рендеринга:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
     }
-  } catch (err) {
-    console.error('Render error:', err);
-    try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
-    await ctx.reply(`❌ <b>Ошибка рендеринга:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
-  }
+  })();
 });
 
 bot.action(/^publish:(.+)$/, async (ctx) => {
@@ -1527,22 +1534,31 @@ bot.action(/^publish:(.+)$/, async (ctx) => {
   const progressMsg = await ctx.reply(`🚀 <b>Публикация комикса <code>${id}</code>...</b>`, { parse_mode: 'HTML' });
 
   const cmd = `node --env-file=.env scripts/publish_rendered.js`;
-  try {
-    const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
-    try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
 
-    const updated = findScenario(id);
-    if (updated) {
-      await ctx.reply(`🎉 <b>Комикс успешно опубликован!</b>`, { parse_mode: 'HTML' });
-      await sendScenarioView(ctx, updated.scenario, updated.status);
-    } else {
-      await ctx.reply(`✅ Комикс <code>${id}</code> опубликован!`, { parse_mode: 'HTML' });
-    }
-  } catch (err) {
-    console.error('Publish error:', err);
-    try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
-    await ctx.reply(`❌ <b>Ошибка публикации:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
+  if (global.isTestEnv) {
+    return;
   }
+
+  // Fire-and-forget по той же причине что render handler выше —
+  // Telegraf handlerTimeout=90s, а publish может идти долго.
+  void (async () => {
+    try {
+      const { stdout, stderr } = await execAsync(cmd, { cwd: PROJECT_ROOT, maxBuffer: 10 * 1024 * 1024 });
+      try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+
+      const updated = findScenario(id);
+      if (updated) {
+        await ctx.reply(`🎉 <b>Комикс успешно опубликован!</b>`, { parse_mode: 'HTML' });
+        await sendScenarioView(ctx, updated.scenario, updated.status);
+      } else {
+        await ctx.reply(`✅ Комикс <code>${id}</code> опубликован!`, { parse_mode: 'HTML' });
+      }
+    } catch (err) {
+      console.error('Publish error:', err);
+      try { await ctx.deleteMessage(progressMsg.message_id); } catch(e) {}
+      await ctx.reply(`❌ <b>Ошибка публикации:</b>\n<code>${escapeHtml(err.stderr || err.message)}</code>`, { parse_mode: 'HTML' });
+    }
+  })();
 });
 
 // ── Text & Keyboard Input Handler ─────────────────────────────────────────────
