@@ -123,7 +123,7 @@ curl -X POST http://127.0.0.1:3000/api/scenarios/stalker-013/render \
 
 | ID | Задача | Приоритет |
 |---|---|---|
-| F1 | Series consistency bible (`bible/character-<name>.md` + character-LoRA workflow) | High |
-| F2 | A/B harness (`scripts/ab_test_scenario.py` уже untracked) | Medium |
-| F3 | `/render <id> [--provider]` команда в tg-bot | Medium |
+| F1 | Series consistency bible (`bible/character-<name>.md` + character-LoRA workflow) | High | ✅ Done (commit `b6a7e4f`) |
+| F2 | A/B harness (`scripts/ab_test_scenario.py` уже untracked) | Medium | ✅ Done (commit `ad87ba5`) |
+| F3 | `/render <id> [--provider]` команда в tg-bot | Medium | ✅ Done (commit `75db351`) |
 | F4 | Draw Things model auto-discovery (каталог `Models/` → whitelist по тегам) | Low |

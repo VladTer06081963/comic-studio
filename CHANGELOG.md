@@ -157,6 +157,19 @@
   - **Verification**: 19/19 tg-bot (10 новых + 5 revision + 4 helpers), 81/81 Python, 110/110 web — **210/210 OK**.
   - **Backward-compat**: команда новая, никаких regressions.
   - **Out-of-scope (последний)**: series consistency bible (`bible/character-<name>.md` + character-LoRA workflow).
+- `2026-09-05T23:40:00+03:00` — **📚 Bible foundation: character sheet workflow + lint + first character (Stalker Резник)**. Закрывает **последний out-of-scope пункт** tasks 027. Series consistency теперь имеет структуру: character sheet → LoRA + seed → scenario.json → render.
+  - **`bible/README.md`** (NEW, ~250 строк): workflow overview — когда создавать character sheet, как использовать в сценарии, seed strategy (один seed на персонажа на всю серию), LoRA strategy (один LoRA на персонажа, реже на стиль), revision policy (косметические — коммить; визуальные — новый персонаж; отзыв — в `_archive/`).
+  - **`bible/_TEMPLATE_character.md`** (NEW, ~150 строк): шаблон character sheet. Секции: Identity, Visual, Wardrobe, Props, Personality, Seed, LoRA, Sample prompt, Tags. Checklist перед коммитом.
+  - **`bible/characters/stalker-reznik.md`** (NEW, ~230 строк): **первый реальный персонаж** — Stalker Резник для серии «Stalker: Чёрный день». Полная визуальная карта (52 года, SEVA suit с ржавчиной, Ecologist detector, медальон с женой, тату на предплечье), personality (угрюмый, неразговорчивый, единственная улыбка — медальон), `render_seed: 42` (с обоснованием после теста 8 seed'ов), `render_lora: stalker_sdxl_lora_f16.ckpt` (с trigger words), полный Sample prompt на 200+ слов.
+  - **`scripts/lint_bible.py`** (NEW, ~165 строк): валидатор character sheets. Проверяет обязательные секции (Identity, Visual, Wardrobe, Props, Personality), поля (Seed, LoRA, Sample prompt), формат (Seed — int 0..2^31-1, LoRA — `*.ckpt`/`*.safetensors`, Sample prompt — non-empty content). Line-based scan для empty-content detection. `python scripts/lint_bible.py` — exit 0 на OK, exit 1 на errors.
+  - **`tests/test_lint_bible.py`** (NEW, 27 тестов): `TestHasSection`, `TestHasFieldWithPrefix`, `TestValidate` (8 тестов: valid sheet, missing identity/seed, non-integer seed, LoRA without extension, safetensors valid, empty sample prompt, all missing), `TestMain` (5 тестов: integration с temp dir, no/empty/valid/invalid/mixed), `TestRegexes` (6 тестов: seed H2/H3, LoRA ckpt/safetensors/without, sample prompt content). Все mocked, 0 live calls.
+  - **Integration с существующим pipeline**:
+    - `bible/characters/stalker-reznik.md` → `render_lora: "stalker_sdxl_lora_f16.ckpt"` → `scenario.json.render_lora` → `py.render.drawthings_client.generate_image(..., lora=...)` → Draw Things HTTP
+    - `bible Seed: 42` → `scenario.json.render_seed` → `_render_single_panel(..., seed=42, ...)` → фиксированный SD seed → consistency
+    - `bible Sample prompt` → `scenario.json.panels[*].prompt` (копируется as-is) → consistency через trigger words
+  - **Verification**: 108/108 Python (62 router+clients + 19 ab_renderer + 27 lint_bible), 19/19 tg-bot, 110/110 web — **237/237 OK**. Bible lint: `✅ Bible OK: 1 character(s)`.
+  - **Что дальше (отдельные change'ы)**: locations/ для серийных локаций (Припять, Рыжий лес), styles/ для визуальных стилей серий, init_character.py для bootstrap нового персонажа из reference image.
+  - **Tasks 027 closed: 6/6**. Out-of-scope из local-uncensored-stack change закрыт полностью.
 - `2026-09-05T23:30:00+03:00` — **📊 Прогресс-сводка по change `local-uncensored-stack` (4 коммита, 1 сессия)**. Резюме работы от 026-fixation до завершения tasks 027 (кроме последнего out-of-scope).
 
   **Timeline коммитов:**
