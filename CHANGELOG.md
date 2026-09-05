@@ -157,3 +157,41 @@
   - **Verification**: 19/19 tg-bot (10 новых + 5 revision + 4 helpers), 81/81 Python, 110/110 web — **210/210 OK**.
   - **Backward-compat**: команда новая, никаких regressions.
   - **Out-of-scope (последний)**: series consistency bible (`bible/character-<name>.md` + character-LoRA workflow).
+- `2026-09-05T23:30:00+03:00` — **📊 Прогресс-сводка по change `local-uncensored-stack` (4 коммита, 1 сессия)**. Резюме работы от 026-fixation до завершения tasks 027 (кроме последнего out-of-scope).
+
+  **Timeline коммитов:**
+
+  | # | Commit | Тема | Что сделано |
+  |---|---|---|---|
+  | 1 | `20d05d8` | Удалить Draw Things orchestrator | Фиксация 026: убрал half-wired `/provider` UI-иллюзию + multi-server MCP клиент, оставил clean main. Foundation для clean integration. |
+  | 2 | `4117b80` | Local Uncensored Stack (foundation) | `provider_router.py` (genre-based выбор провайдеров) + `lmstudio_client.py` (Magnum через OpenAI-compat) + `drawthings_client.py` (DT через HTTP) + 62 теста. Wire-up в `writer.py` и `render_approved.py`. |
+  | 3 | `e4d8568` | Provider passthrough Web + MCP | `web/lib/validation.js` IMAGE/TEXT_PROVIDERS enum-ы; `POST /api/scenarios/:id/render` принимает body; `mcp-server` tool `render_comic` пробрасывает. Web 110/110, py 81/81, tg 6/6. |
+  | 4 | `ad87ba5` | A/B render harness | `py/render/ab_renderer.py` (side-by-side compare.html) + `scripts/ab_test_render.py` CLI + 19 тестов. `data/comics/.ab/<id>/` — без модификации canonical render. |
+  | 5 | `75db351` | tg-bot `/render` команда | Telegram-команда `/render <id> [image_provider] [text_provider]` с polling job status, BUSY handling, validation. 10 новых тестов в `render.test.js`. |
+
+  **Tasks 027 статус:**
+  - ✅ Foundation (provider_router + clients + tests)
+  - ✅ Wire-up writer.py + render_approved.py
+  - ✅ Web/mcp passthrough
+  - ✅ A/B harness
+  - ✅ tg-bot `/render` команда
+  - ⏳ **Series consistency bible** — единственный out-of-scope остался. Не код-механика, а контент: `bible/character-<name>.md` с visual sheets + character-LoRA workflow. Требует редактуры, отдельный change.
+
+  **Verification (суммарно):**
+  - Python: **81/81** (`test_provider_router` 18 + `test_lmstudio_client` 15 + `test_drawthings_client` 29 + `test_ab_renderer` 19)
+  - tg-bot: **19/19** (render 10 + revision 5 + helpers 4)
+  - web: **110/110**
+  - **Итого: 210/210 OK** (0 live provider calls)
+  - Live интеграции: только ручные (`python scripts/ab_test_render.py --scenario-id ...` + LM Studio + Draw Things должны быть запущены пользователем)
+
+  **Документация:**
+  - OpenSpec: `openspec/changes/local-uncensored-stack/` (proposal + tasks + 4 delta specs)
+  - Audit: `summary/audit/027_local-uncensored-stack.md` (11 КБ)
+  - Tasks: `summary/tasks/027_local-uncensored-stack.md` (7 КБ)
+  - AGENTS.md обновлён: `## Image gen provider` + `## Censorship-sensitive content`
+  - `.env.example` дополнен: `LM_*`, `DRAWTHINGS_*`, `DEFAULT_*_PROVIDER`
+
+  **Что НЕ сделано (намеренно):**
+  - `bible/character-<name>.md` workflow (отдельный change, требует редактуры)
+  - `data/.provider` history cleanup (был удалён в 026, но файлы от старых сессий могут лежать — `rm -f data/.provider` если что)
+  - Demo-ветка: НЕ трогали, остаётся MiniMax-only (поведение совпадает с default router)
