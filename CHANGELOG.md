@@ -133,3 +133,14 @@
   - **Tests**: 6/6 tg-bot, 110/110 web, 62/62 Python — **178/178 OK**. Live provider calls: 0.
   - **Backward-compat**: старые клиенты без `image_provider`/`text_provider` работают как раньше (router default).
   - **Out-of-scope (ещё)**: `/render <id> [--provider]` команда в tg-bot, series consistency bible, A/B harness.
+- `2026-09-05T23:20:00+03:00` — **A/B render harness: side-by-side compare Draw Things vs MiniMax**. Закрывает out-of-scope пункт «A/B harness» из tasks 027. Рендерит один сценарий двумя image-провайдерами без модификации canonical render, генерирует compare.html.
+  - **`py/render/ab_renderer.py`** (NEW, ~280 строк): `_resolve_client(provider)` возвращает нужный `generate_image`; `_render_with_provider(scenario, out_dir, *, provider, seed, lora, caption_style)` рендерит все панели + собирает через `assemble_comic` + возвращает метрики (elapsed_sec, size_bytes, dims из PNG IHDR); `render_ab(scenario, out_dir, *, providers, seed)` рендерит всеми провайдерами; `generate_compare_html(scenario, results, output_path)` генерирует side-by-side HTML с per-panel сравнением, метриками, XSS-эскейпом, error-блоками для упавших провайдеров; `summarize(results)` — текстовая сводка.
+  - **`scripts/ab_test_render.py`** (NEW, ~115 строк): CLI `--scenario-id`, `--providers`, `--seed`, `--out-dir`, `--caption-style`. Загружает сценарий через `load_scenario`, запускает `render_ab`, выводит сводку и путь к compare.html.
+  - **`tests/test_ab_renderer.py`** (NEW, 19 тестов): все mocked, 0 live provider calls. Покрывает: `_resolve_client` (3 провайдера), `_png_dimensions` (валидный/не-валидный PNG, non-existent), `escape`, `_render_with_provider` (4 случая: minimax, drawthings+LoRA, unknown provider, no panels), `render_ab` (3 случая: оба успешны, minimax упал → DT продолжает, кастомный subset), `generate_compare_html` (3 случая: структура, XSS-эскейп, error-блок), `summarize` (2 случая: success + error).
+  - **Output структура**: `data/comics/.ab/<scenario_id>/{minimax,drawthings}/{panel_N.png, final.png}` + `compare.html`. Не трогает canonical `data/comics/<id>.png`.
+  - **Usage**:
+    - `python scripts/ab_test_render.py --scenario-id stalker-013 --seed 42` — оба провайдера, fixed seed
+    - `python scripts/ab_test_render.py --scenario-id stalker-013 --providers drawthings` — только DT
+    - Открыть результат: `open data/comics/.ab/<id>/compare.html`
+  - **Verification**: 81/81 Python (62 router+clients + 19 ab_renderer), 6/6 tg-bot, 110/110 web — **197/197 OK**.
+  - **Out-of-scope (ещё)**: `/render <id> [--provider]` команда в tg-bot, series consistency bible.
