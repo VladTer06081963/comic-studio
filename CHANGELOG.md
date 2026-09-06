@@ -301,3 +301,24 @@
 **Tests**:
 - `tests/render_button.test.js` — новый тест `Handler returns quickly (fire-and-forget render)` проверяет что handler возвращается <2000ms даже при `isTestEnv=false` (т.е. execAsync действительно сработал бы).
 - Полный tg-bot suite: 33/33 OK.
+
+## 2026-09-06T09:41Z — Fixation 028: rerender promote + tg-bot stability (фаза 4 local-uncensored-stack)
+
+**Context**: фазы 1-3 change'а `local-uncensored-stack` (Draw Things + LM Studio Magnum) были закоммичены и протестированы, но при первом реальном live-тесте на Stalker-сценарии 97ede986 всплыли 3 бага:
+
+1. HTML + pages терялись при rerender (`scripts/render_approved.py:_promote_rerender` не знал про HTML; `assemble_pages` писал напрямую в canonical)
+2. tg-bot падал на stale Telegram callback (400 "query is too old" — `unhandledRejection` от `answerCallbackQuery`)
+3. tg-bot падал с `TimeoutError 90s` (Telegraf `handlerTimeout=90000` + `await execAsync` для рендера 1-3 мин)
+
+**Commits**:
+- `3748a3f` — fix(render): HTML + pages promote в rerender; pre-existing broken tests переведены на новые provider names + ExitStack helpers
+- `3a4cb06` — fix(tg-bot): global `process.on('unhandledRejection')` + `uncaughtException` для stale-callback safety
+- `545d2b1` — fix(tg-bot): render + publish handlers обёрнуты в `void (async () => { ... })()` IIFE (fire-and-forget)
+
+**Recovery**: 97ede986 pages/, pages.json, audio/0?-page.wav, *.html регенерированы вручную через `assemble_pages(generate_cover=False)` + `render_reader`; 5 audio-path'ов в scenario JSON перенаправлены из wiped staging в canonical.
+
+**OpenSpec**: `openspec/changes/local-uncensored-stack/` → `openspec/changes/archive/local-uncensored-stack/` (🟡 Proposed → ✅ Done; tasks.md обновлён фазами 1-3 + 4.1-4.5).
+
+**Tests**: 186/186 Python OK (0 failures, 0 errors), 33/33 tg-bot OK.
+
+**Audit + Tasks**: `summary/audit/028_rerender-promote-and-tgbot-stability.md`, `summary/tasks/028_rerender-promote-and-tgbot-stability.md`.
