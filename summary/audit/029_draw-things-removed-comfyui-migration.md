@@ -167,21 +167,29 @@ panavision-70), либо MiniMax `image-01` в облаке. Инструкци�
   - Проверка: `python -m unittest tests.test_comfyui_client
     tests.test_provider_router tests.test_ab_renderer` → **62/62 OK**
 
-  **Эти изменения не входят в коммиты этого PR** — они живы в рабочей
-  копии отдельной ветки работы. Настоящий фиксационный аудит по переносу
-  будет отдельным.
+  **Эти изменения не входят в коммиты этого PR и не зафиксированы ни в
+  какой ветке** — `git log --all -- py/render/comfyui_client.py` пуст, файлы
+  существуют только в рабочей копии, `git stash` пуст. Ветки в репозитории:
+  `main`, `demo-production`, `docs/draw-things-to-comfyui-audits` (этот PR).
+  Перенос ещё не зафиксирован — ему нужен отдельный коммит и отдельный
+  фиксационный аудит.
 
-- **`py/render/drawthings_client.py` пока на месте** (старый клиент, 11 KB)
-  и `bible/prototypes/` — 6 скриптов, всё ещё untracked. Их удаление — часть
-  незавершённого переноса.
+- **`py/render/drawthings_client.py` пока на месте** (старый клиент, 11 288
+  байт, файл **отслеживается git** — коммиты `c9e68de`, `4b63f40`, `4117b80`),
+  и `bible/prototypes/` — 6 скриптов, которые **не отслеживаются** вообще.
+  Их удаление — часть незавершённого переноса.
 - **Старые DT-skill'ы** (`draw-things-comic`, `draw-things-icons`) остались в индексе
   и сломаны — пока их явно не удалят.
-- **Проверен только один LoRA в img2img** (`super-panavision-70`).
-  Из четырёх установленных (`kodachrome-1970s`,
-  `soviet-animation-style-by-alexander-tatarsky-absurdist-and-humorous-noir-parody-feel`,
-  `super-panavision-70-cinematic-vintage-film-style-xl-f1d`, `vovka_flux`)
-  в img2img проверен один — остаются три: `kodachrome-1970s`,
-  `soviet-animation-style`, `vovka_flux`.
+- **Проверен только один LoRA в img2img**
+  (`super-panavision-70-cinematic-vintage-film-style-xl-f1d.safetensors`).
+  Всего установлено четыре (`curl http://127.0.0.1:8189/models/loras`):
+  `kodachrome-1970s.safetensors`,
+  `soviet-animation-style-by-alexander-tatarsky-absurdist-and-humorous-noir-parody-feel.safetensors`,
+  `super-panavision-70-cinematic-vintage-film-style-xl-f1d.safetensors`,
+  `vovka_flux.safetensors`. Остались три непроверенных:
+  `kodachrome-1970s.safetensors`,
+  `soviet-animation-style-by-alexander-tatarsky-absurdist-and-humorous-noir-parody-feel.safetensors`,
+  `vovka_flux.safetensors`.
 - **Icon-set батч не гонялся** — skill `comfyui-icons` написан, но сам сет не прогонялся.
 - **Песочница Draw Things** (`~/Library/Containers/com.liuliu.draw-things`) осталась
   на диске; её размер не измерить без «Полного доступа к диску» в macOS.
