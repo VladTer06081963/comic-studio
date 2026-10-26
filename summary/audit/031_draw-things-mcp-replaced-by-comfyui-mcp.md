@@ -56,17 +56,48 @@ Draw Things снят с машины.
 
 ### 2.2. Конфиги заменены
 
+Запись `draw-things` нашлась **не в одном, а в трёх живых MCP-конфигах**
+(первый поиск ограничился теми, что были под рукой; полный свип по
+домашке вскрыл третий):
+
 | Файл | Было | Стало |
 |---|---|---|
 | `~/.hermes/config.yaml` | `draw-things:` → `draw-things-mcp/.../index.js`, `DRAW_THINGS_URL`, `DRAW_THINGS_TIMEOUT: '300'` | `comfyui:` → `comfyui-mcp/.../index.js`, `COMFYUI_URL: http://127.0.0.1:8189`, `COMFYUI_TIMEOUT: '1800'`, `timeout: 1800` |
 | `~/.gemini/config/mcp_config.json` | то же | то же (без per-server timeout — у Antigravity другой механизм) |
+| `~/.minimax/mcp.json` | то же + `cwd` | то же, `cwd` переписан на новый проект |
 
 Правка выполнена скриптами с **проверками**: старый блок должен
 встречаться ровно один раз, новый — ещё не существовать, YAML/JSON
 должны парситься, `comic-server` / `comic-studio` должны выжить.
 Бэкапы: `*.bak-20261026` рядом с каждым конфигом.
 
-### 2.3. Два бага, найденных на живом бэкенде
+### 2.3. Четвёртая интеграция: pi-расширение `/draw`
+
+`~/.pi/agent/extensions/draw-things.ts` — команда `/draw` и LLM-инструмент
+`draw` для pi coding agent. Бил прямо в
+`http://localhost:7860/sdapi/v1/txt2img` — мёртвый адрес.
+
+Файл переписан на ComfyUI (и переименован в `comfyui.ts`): та же
+функциональность (`/draw` + инструмент `draw`, PNG в текущей директории),
+но workflow FLUX отправляется в ComfyUI, результат забирается через
+`/history` + `/view`. Добавлены параметры `width`, `height`, `steps`,
+`guidance`.
+
+Pi грузит расширения автоиз папки — `~/.pi/agent/settings.json` содержит
+только `"-builtin:mcp"`, список вручную не ведётся, поэтому переименования
+файла достаточно.
+
+### 2.4. Whitelist minimax
+
+`~/.minimax/permission.json` — allow-list bash-команд. Три записи
+упоминали draw-things-mcp: две с путём к проекту, одна — с подписью
+`get_options (draw-things)` внутри текста команды. Первые две
+переписаны на новый путь, третья — переименована в
+`get_options (comfyui)`. Это исторические записи о выполненных
+командах, а не активные ссылки, но синхронизировать их нужно, чтобы
+следующий запуск не спрашивал разрешения заново.
+
+### 2.5. Два бага, найденных на живом бэкенде
 
 **`denoise` протекал в txt2img.** Первый прогон smoke-теста отчитался
 «all checks passed» — вызов успешен, файл настоящий PNG, ~650 KB. Но
@@ -103,6 +134,9 @@ Draw Things снят с машины.
 | `~/Projects/comfyui-mcp/.gitignore` | CREATED | `node_modules/` |
 | `~/.hermes/config.yaml` | MODIFIED | `draw-things` → `comfyui` + `timeout: 1800` |
 | `~/.gemini/config/mcp_config.json` | MODIFIED | `draw-things` → `comfyui` |
+| `~/.minimax/mcp.json` | MODIFIED | `draw-things` → `comfyui` + `cwd` |
+| `~/.minimax/permission.json` | MODIFIED | 3 записи allow-list переписаны на новый путь |
+| `~/.pi/agent/extensions/draw-things.ts` → `comfyui.ts` | REPLACED | `/draw` + инструмент `draw` переведены на ComfyUI |
 | `~/.hermes/skills/creative/comfyui-local/SKILL.md` | MODIFIED | раздел про MCP-сервер, таймауты, `denoise` |
 
 **Не тронуто:** `~/Projects/draw-things-mcp/` (проект остаётся на диске —
@@ -115,18 +149,25 @@ Draw Things снят с машины.
 | Шаг | Результат |
 |---|---|
 | `curl http://192.168.50.250:7860` / `http://127.0.0.1:7860` | ✅ HTTP 000 — бэкенд Draw Things мёртв, запись была безнадёжной |
-| `grep -rn 'draw.things' ~/.hermes/config.yaml ~/.gemini/config/mcp_config.json` | ✅ ноль совпадений |
-| `grep -rn 'draw.things' ~/.codex/config.toml ~/.claude.json ~/.cursor/mcp.json` | ✅ ноль совпадений |
+| `grep -rn -i 'draw.things' ~/.hermes/config.yaml ~/.gemini/config/mcp_config.json` | ✅ ноль совпадений |
+| `grep -rn -i 'draw.things' ~/.minimax/mcp.json ~/.minimax/permission.json` | ✅ ноль совпадений после замены |
+| `grep -rn -i 'draw.things' ~/.codex/config.toml ~/.claude.json ~/.cursor/mcp.json` | ✅ ноль совпадений |
+| `grep -rn -i 'draw.things' ~/.void-editor/mcp.json ~/.lmstudio/mcp.json ~/.pi/agent/settings.json` | ✅ ноль совпадений |
+| `grep -rn -i 'draw.things\|7860' ~/.pi/agent/extensions/comfyui.ts` | ✅ только комментарий, объясняющий историю |
 | `python3 -c "yaml.safe_load(config.yaml)"` | ✅ YAML валиден, `mcp_servers: [comic-studio, comfyui, voicebox, davinci-resolve, concat-bridge, canva-mcp-bridge]` |
 | `python3 -c "json.load(mcp_config.json)"` | ✅ JSON валиден, `mcpServers: [comic-server, comfyui]` |
+| `python3 -c "json.load(~/.minimax/mcp.json)"` | ✅ JSON валиден, `mcpServers: [comic-studio, comfyui]` |
 | путь `mcp_servers.comfyui.args[0]` существует | ✅ `True` |
 | `npm install` в новом проекте | ✅ 95 пакетов, импорт SDK работает |
 | `node smoke-test.mjs` → connect | ✅ `[ok] connected` |
 | `node smoke-test.mjs` → tools/list | ✅ `generate_image, get_options` |
 | `node smoke-test.mjs` → get_options | ✅ `version=0.42.5`, `unets=[flux1-dev-Q4_K_S.gguf, z_image_turbo_bf16.safetensors]`, `loras=4`, очередь пуста |
-| `node smoke-test.mjs` → generate_image (512², 12 шагов) | ✅ PNG сохранён, base64-блок 393 248 символов |
+| `node smoke-test.mjs` → generate_image (512², 12 шагов) | ✅ PNG сохранён, base64-блок 403 824 символов |
 | **визуальный осмотр рендера** | ✅ силуэт солдата, контровой свет из окон, объёмный туман, артефактов нет (после фикса `denoise`) |
-| `node smoke-img2img.mjs <png>` | ✅ img2img-путь отработал |
+| `node smoke-img2img.mjs <png>` | ✅ img2img-путь отработал, плёночный стиль при сохранённом персонаже |
+| `node --experimental-strip-types --check ~/.pi/agent/extensions/comfyui.ts` | ✅ exit 0 |
+| workflow pi-расширения → `POST /prompt` | ✅ `{"prompt_id":"6fd6522a…","node_errors":{}}` |
+| **визуальный осмотр pi-рендера** | ✅ кот на пляже в золотой час, тёплый закат, отражение в песке, артефактов нет |
 | логи Hermes | ✅ `18:11:45 starting MCP server 'comfyui'` |
 | `mcp_schema_cache.json` | ✅ сервер `comfyui`, оба инструмента с полными схемами |
 
