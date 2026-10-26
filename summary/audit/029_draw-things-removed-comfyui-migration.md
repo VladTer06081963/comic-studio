@@ -152,16 +152,36 @@ panavision-70), либо MiniMax `image-01` в облаке. Инструкци�
 
 ## 6. Известные ограничения
 
-- **`comic-studio` не переведён.** Там остаётся ~1300 строк живого DT-кода:
-  `py/render/drawthings_client.py`, `provider_router`, `ab_renderer` (сравнение
-  A/B-вариантов), 6 скриптов `bible/prototypes/`, тесты, MCP-опция `"drawthings"`.
-  Перенос требует переписать не только вызов, но и логику сравнения — отдельная задача.
-- **`mcp-server/index.js`** в comic-studio всё ещё предлагает `"drawthings"` как
-  enum-значение image-провайдера.
+- **Перенос `comic-studio` идёт параллельно** (начат 2026-10-26 ~18:44,
+  отдельной работой). На момент последней проверки:
+  - ✅ `py/render/comfyui_client.py` (367 строк) — новый клиент ComfyUI
+  - ✅ `tests/test_comfyui_client.py` (138 строк)
+  - ✅ `py/scenario/provider_router.py` — `GENRE_DEFAULT` переключён на
+    `comfyui`, а `"drawthings"` перенаправляется на `"comfyui"` для
+    обратной совместимости старых сценариев
+  - ✅ `py/render/ab_renderer.py`, `scripts/render_approved.py`,
+    `scripts/ab_test_render.py`, `tests/test_ab_renderer.py`,
+    `tests/test_provider_router.py`, `tests/test_render_approved.py`
+  - ✅ `mcp-server/index.js` — enum теперь `["minimax", "comfyui", "drawthings"]`
+  - ✅ `tg-bot/bot.js`, `web/lib/validation.js`
+  - Проверка: `python -m unittest tests.test_comfyui_client
+    tests.test_provider_router tests.test_ab_renderer` → **62/62 OK**
+
+  **Эти изменения не входят в коммиты этого PR** — они живы в рабочей
+  копии отдельной ветки работы. Настоящий фиксационный аудит по переносу
+  будет отдельным.
+
+- **`py/render/drawthings_client.py` пока на месте** (старый клиент, 11 KB)
+  и `bible/prototypes/` — 6 скриптов, всё ещё untracked. Их удаление — часть
+  незавершённого переноса.
 - **Старые DT-skill'ы** (`draw-things-comic`, `draw-things-icons`) остались в индексе
   и сломаны — пока их явно не удалят.
 - **Проверен только один LoRA в img2img** (`super-panavision-70`).
-  `soviet-animation-style` и `vovka_flux` не тестировались в этом режиме.
+  Из четырёх установленных (`kodachrome-1970s`,
+  `soviet-animation-style-by-alexander-tatarsky-absurdist-and-humorous-noir-parody-feel`,
+  `super-panavision-70-cinematic-vintage-film-style-xl-f1d`, `vovka_flux`)
+  в img2img проверен один — остаются три: `kodachrome-1970s`,
+  `soviet-animation-style`, `vovka_flux`.
 - **Icon-set батч не гонялся** — skill `comfyui-icons` написан, но сам сет не прогонялся.
 - **Песочница Draw Things** (`~/Library/Containers/com.liuliu.draw-things`) осталась
   на диске; её размер не измерить без «Полного доступа к диску» в macOS.
@@ -170,7 +190,8 @@ panavision-70), либо MiniMax `image-01` в облаке. Инструкци�
 ## 7. Следующие шаги
 
 - [ ] Решить, удалять ли `draw-things-comic` и `draw-things-icons` (замена готова и проверена)
-- [ ] Перевести `comic-studio` с DT на ComfyUI (~1300 строк; нужна отдельная проработка `ab_renderer`)
-- [ ] Убрать enum-значение `"drawthings"` из `comic-studio/mcp-server/index.js`
+- [ ] **Завершить перенос `comic-studio`** (идёт параллельно): удалить
+      `py/render/drawthings_client.py` и 6 скриптов `bible/prototypes/`,
+      зафиксировать отдельным аудитом
 - [ ] Прогнать icon-set батч на `comfyui-icons` (10+ иконок, сериализованно — watchdog-ловушка на этой машине уже срабатывала)
-- [ ] Проверить остальные три LoRA в img2img (`soviet-animation-style`, `vovka_flux`)
+- [ ] Проверить остальные три LoRA в img2img (`kodachrome-1970s`, `soviet-animation-style`, `vovka_flux`)

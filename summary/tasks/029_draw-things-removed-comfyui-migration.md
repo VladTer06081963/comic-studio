@@ -20,7 +20,8 @@
 | 11 | Перевести `comic-studio` на ComfyUI (`comfyui_client.py`, router, render_approved, ab_renderer) | 4-6h | ✅ Done |
 | 12 | Добавить `"comfyui"` в enum и описание `comic-studio/mcp-server/index.js` (сохранив DT alias) | 15m | ✅ Done |
 | 13 | Прогнать icon-set батч на `comfyui-icons` (10+ иконок, сериализованно) | 1h | ❌ Не начато |
-| 14 | Проверить остальные три LoRA в img2img (`soviet-animation-style`, `vovka_flux`) | 45m | ❌ Не начато |
+| 14 | Проверить остальные три LoRA в img2img (`kodachrome-1970s`, `soviet-animation-style`, `vovka_flux`) | 45m | ❌ Не начато |
+| 15 | Удалить остатки DT-кода после параллельного переноса (`py/render/drawthings_client.py`, 6 скриптов `bible/prototypes/`) | 30m | ⏸ Идёт параллельная работа |
 
 ## Зависимости
 
