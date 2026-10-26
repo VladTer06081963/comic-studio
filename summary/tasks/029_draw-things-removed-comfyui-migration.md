@@ -17,8 +17,8 @@
 | 8 | Измерить поведение FLUX в img2img (style-only промпт vs LoRA) | 1h | ✅ Done — таблица denoise 0.40/0.70 + рабочий рецепт с LoRA |
 | 9 | Прогнать живые рендеры: txt2img, пиктограмма, LoRA, img2img×2, img2img+LoRA | 1h | ✅ Done — 6 рендеров, все проверены глазами |
 | 10 | Удалить старые `draw-things-comic` / `draw-things-icons` | 15m | ⏸ Ожидает решения пользователя |
-| 11 | Перевести `comic-studio` (~1300 строк живого DT-кода) на ComfyUI | 4-6h | ❌ Не начато — отдельная задача |
-| 12 | Убрать enum-значение `"drawthings"` из `comic-studio/mcp-server/index.js` | 15m | ❌ Не начато — зависит от #11 |
+| 11 | Перевести `comic-studio` на ComfyUI (`comfyui_client.py`, router, render_approved, ab_renderer) | 4-6h | ✅ Done |
+| 12 | Добавить `"comfyui"` в enum и описание `comic-studio/mcp-server/index.js` (сохранив DT alias) | 15m | ✅ Done |
 | 13 | Прогнать icon-set батч на `comfyui-icons` (10+ иконок, сериализованно) | 1h | ❌ Не начато |
 | 14 | Проверить остальные три LoRA в img2img (`soviet-animation-style`, `vovka_flux`) | 45m | ❌ Не начато |
 
@@ -95,7 +95,7 @@ python ~/.hermes/skills/creative/comfyui-local/scripts/comfy_client.py img2img \
 ## Связанные
 
 - `summary/audit/026_remove-draw-things-orchestrator.md` — предыдущее удаление half-wired DT-обвязки
-- `summary/audit/027_local-uncensored-stack.md` — DT + LMac Studio как локальный стек
+- `summary/audit/027_local-uncensored-stack.md` — DT + LM Studio как локальный стек
 - `summary/audit/030_freevideo-removal-plan.md` — план удаления FreeVideo (50.6 ГБ)
 - `~/knowledge/ConfyUI/ComfyUI.md` — измеренный гайд по ComfyUI на Mac Studio
 

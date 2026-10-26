@@ -3,7 +3,7 @@
 **Дата:** 2026-10-26
 **Change ID:** `—` (не OpenSpec change; инфраструктурная миграция)
 **Компаньон:** `—`
-**Связан:** `summary/audit/026_remove-draw-things-orchestrator.md` (удаление half-wired DT-обвязки из `main`), `summary/audit/027_local-uncensored-stack.md` (DT + LMac Studio как локальный стек)
+**Связан:** `summary/audit/026_remove-draw-things-orchestrator.md` (удаление half-wired DT-обвязки из `main`), `summary/audit/027_local-uncensored-stack.md` (DT + LM Studio как локальный стек)
 
 ## 1. Контекст
 
@@ -62,7 +62,7 @@ LoRA trainer UI, `custom_lora.json`, песочница моделей, 300-се
 | `openspec/changes/hybrid-media-workflow/proposal.md` | «Prefer local Draw Things for image experiments» → ComfyUI + предупреждение про 16 с/шаг |
 
 **Кода вызова Draw Things в capcut-studio не было и не появилось** — видео-пайплайн
-ходит через KIE / MiniMax / OpenRouter / LMac Studio.
+ходит через KIE / MiniMax / OpenRouter / LM Studio.
 
 ### 2.4. Измеренное открытие: FLUX в img2img игнорирует style-only промпт
 
@@ -145,7 +145,7 @@ panavision-70), либо MiniMax `image-01` в облаке. Инструкци�
 
 - `summary/audit/026_remove-draw-things-orchestrator.md` — предыдущее удаление
   half-wired DT-обвязки из `main`; тот же принцип «документируй, что убрано и почему»
-- `summary/audit/027_local-uncensored-stack.md` — DT + LMac Studio как локальный стек;
+- `summary/audit/027_local-uncensored-stack.md` — DT + LM Studio как локальный стек;
   теперь DT-мёртв, стек остался на ComfyUI
 - `~/knowledge/ConfyUI/ComfyUI.md` — измеренный гайд по ComfyUI на Mac Studio
   (два python-окружения, MPS-грабли, download-подводные камни)

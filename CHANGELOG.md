@@ -71,7 +71,7 @@
 
 ## 2026-08-27
 
-- `2026-08-27T22:48:41+03:00` — Подключен **LMac Studio как провайдер** для Hermes (`lmstudio-provider-setup`). Закрыт TODO #11 из аудита 020: `py/scenario/style_writer.py` больше не содержит хардкодов — все три параметра (URL/token/model) читаются из env (`LM_BASE_URL`/`LM_API_KEY`/`LM_MODEL`) с backward-compat fallback. В `~/.hermes/config.yaml` через `hermes config set` добавлены `providers.lmstudio` (base_url `http://127.0.0.1:1234/v1`, request_format=openai, context_window=32768) и `models.magnum-picaro` (provider=lmstudio, alias=magnum). В `~/.hermes/.env` `LM_BASE_URL` сменён с `192.168.50.250:1234` на `127.0.0.1:1234` (localhost не триггерит Hermes network guard). Verification: `curl http://127.0.0.1:1234/v1/models` с токеном → 200, 15 моделей в списке включая Magnum-Picaro-12B (7.12 GB loaded); `hermes config get providers.lmstudio` и `models.magnum-picaro` показывают все 4 ключа каждый, alias `magnum` резолвится в TUI. Audit: `summary/audit/022_lmstudio-provider-setup.md`. Tasks: `summary/tasks/022_lmstudio-provider-setup.md`. OpenSpec change не создавался — изменение конфигурации, не API surface.
+- `2026-08-27T22:48:41+03:00` — Подключен **LM Studio как провайдер** для Hermes (`lmstudio-provider-setup`). Закрыт TODO #11 из аудита 020: `py/scenario/style_writer.py` больше не содержит хардкодов — все три параметра (URL/token/model) читаются из env (`LM_BASE_URL`/`LM_API_KEY`/`LM_MODEL`) с backward-compat fallback. В `~/.hermes/config.yaml` через `hermes config set` добавлены `providers.lmstudio` (base_url `http://127.0.0.1:1234/v1`, request_format=openai, context_window=32768) и `models.magnum-picaro` (provider=lmstudio, alias=magnum). В `~/.hermes/.env` `LM_BASE_URL` сменён с `192.168.50.250:1234` на `127.0.0.1:1234` (localhost не триггерит Hermes network guard). Verification: `curl http://127.0.0.1:1234/v1/models` с токеном → 200, 15 моделей в списке включая Magnum-Picaro-12B (7.12 GB loaded); `hermes config get providers.lmstudio` и `models.magnum-picaro` показывают все 4 ключа каждый, alias `magnum` резолвится в TUI. Audit: `summary/audit/022_lmstudio-provider-setup.md`. Tasks: `summary/tasks/022_lmstudio-provider-setup.md`. OpenSpec change не создавался — изменение конфигурации, не API surface.
 
 ## 2026-09-04
 
@@ -110,9 +110,9 @@
   - **Что НЕ тронуто:** `mcp-server/index.js` (он и был single-domain), `py/render/minimax_client.py` (единственный рабочий image-провайдер), `~/Projects/draw-things-mcp/` (независимый проект), `~/.minimax/mcp.json` (runtime-конфиг пользователя).
   - **Demo-ветка** получает чистый main без half-wired интеграций; draw-things остаётся доступным напрямую через Hermes.
   - Audit: `summary/audit/026_remove-draw-things-orchestrator.md`. Tasks: `summary/tasks/026_remove-draw-things-orchestrator.md`. Будущее: F1 в tasks 026 (полная интеграция Draw Things v2, если будет запрос).
-- `2026-09-05T23:05:00+03:00` — **Фиксация 027 (foundation): Local Uncensored Stack (Draw Things + LMac Studio Magnum)**. Закрывает F1 из tasks 026. Per-scenario выбор провайдеров через `provider_router`, genre-based default (`stalker-horror`/`military`/`horror` → DT+Magnum; `comedy`/`kids`/`sci-fi` → MiniMax), auto-fallback на MiniMax при недоступности локалки.
+- `2026-09-05T23:05:00+03:00` — **Фиксация 027 (foundation): Local Uncensored Stack (Draw Things + LM Studio Magnum)**. Закрывает F1 из tasks 026. Per-scenario выбор провайдеров через `provider_router`, genre-based default (`stalker-horror`/`military`/`horror` → DT+Magnum; `comedy`/`kids`/`sci-fi` → MiniMax), auto-fallback на MiniMax при недоступности локалки.
   - **`py/scenario/provider_router.py`** (NEW, ~150 строк): `pick_text_provider`, `pick_image_provider`, `GENRE_DEFAULT` (8 жанров), `try_with_fallback` (auto-fallback с retry), `mark_fallback` (помечает scenario JSON).
-  - **`py/scenario/lmstudio_client.py`** (NEW, ~95 строк): `_call_lmstudio_chat(system, user, model=None)` — зеркало `_call_minimax_chat`, через OpenAI-совместимый API LMac Studio. `LMRuntimeError` для fallback-триггера.
+  - **`py/scenario/lmstudio_client.py`** (NEW, ~95 строк): `_call_lmstudio_chat(system, user, model=None)` — зеркало `_call_minimax_chat`, через OpenAI-совместимый API LM Studio. `LMRuntimeError` для fallback-триггера.
   - **`py/render/drawthings_client.py`** (NEW, ~135 строк): `generate_image(prompt, output_path, aspect_ratio, seed, lora, sampler, steps, cfg_scale, negative_prompt)` — зеркало `minimax_client.generate_image` + поддержка LoRA. `DTRuntimeError` для fallback-триггера. Aspect-ratio → (1024×576 / 1024×1024 / 576×1024 и т.д.).
   - **`py/scenario/writer.py`** MODIFIED: `generate_scenario()` принимает `text_provider` параметр; Stage 2b использует `provider_router` для выбора между Magnum и MiniMax; при fallback помечает `text_provider_fallback` в scenario.
   - **`scripts/render_approved.py`** MODIFIED: новые CLI-флаги `--image-provider` (`minimax|drawthings`) и `--text-provider` (`minimax|lmstudio`); `_generate_candidate` использует `provider_router.pick_image_provider`; для DT+fallback передаёт `lora` (из `scenario["render_lora"]`).
@@ -195,7 +195,7 @@
   - tg-bot: **19/19** (render 10 + revision 5 + helpers 4)
   - web: **110/110**
   - **Итого: 210/210 OK** (0 live provider calls)
-  - Live интеграции: только ручные (`python scripts/ab_test_render.py --scenario-id ...` + LMac Studio + Draw Things должны быть запущены пользователем)
+  - Live интеграции: только ручные (`python scripts/ab_test_render.py --scenario-id ...` + LM Studio + Draw Things должны быть запущены пользователем)
 
   **Документация:**
   - OpenSpec: `openspec/changes/local-uncensored-stack/` (proposal + tasks + 4 delta specs)
@@ -304,7 +304,7 @@
 
 ## 2026-09-06T09:41Z — Fixation 028: rerender promote + tg-bot stability (фаза 4 local-uncensored-stack)
 
-**Context**: фазы 1-3 change'а `local-uncensored-stack` (Draw Things + LMac Studio Magnum) были закоммичены и протестированы, но при первом реальном live-тесте на Stalker-сценарии 97ede986 всплыли 3 бага:
+**Context**: фазы 1-3 change'а `local-uncensored-stack` (Draw Things + LM Studio Magnum) были закоммичены и протестированы, но при первом реальном live-тесте на Stalker-сценарии 97ede986 всплыли 3 бага:
 
 1. HTML + pages терялись при rerender (`scripts/render_approved.py:_promote_rerender` не знал про HTML; `assemble_pages` писал напрямую в canonical)
 2. tg-bot падал на stale Telegram callback (400 "query is too old" — `unhandledRejection` от `answerCallbackQuery`)

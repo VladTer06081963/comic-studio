@@ -106,7 +106,7 @@ df -h /
 ## Связанные
 
 - `summary/audit/029_draw-things-removed-comfyui-migration.md` — переход на ComfyUI; этот план — его продолжение
-- `summary/audit/027_local-uncensored-stack.md` — DT + LMac Studio как локальный стек
+- `summary/audit/027_local-uncensored-stack.md` — DT + LM Studio как локальный стек
 
 ## Следующие задачи (для будущего)
 
