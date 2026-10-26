@@ -322,3 +322,115 @@
 **Tests**: 186/186 Python OK (0 failures, 0 errors), 33/33 tg-bot OK.
 
 **Audit + Tasks**: `summary/audit/028_rerender-promote-and-tgbot-stability.md`, `summary/tasks/028_rerender-promote-and-tgbot-stability.md`.
+
+## 2026-10-26T13:11Z — Audit 029: Draw Things удалён, локальный image-бэкенд переведён на ComfyUI
+
+**Контекст**: пользователь снёс приложение Draw Things с Mac Studio и
+перешёл на ComfyUI. Вопрос: «У нас здесь это как-то задействовано?»
+
+**Обнаружено в трёх местах:**
+
+| Место | Степень involvement |
+|---|---|
+| `capcut-studio` | косвенно — одна строка `"id": "draw-things"` в `config/model_registry.json` + тестовая фикстура + упоминание в in-flight proposal. **Кода вызова — ноль** |
+| `comic-studio` | **живой код** — `py/render/drawthings_client.py` (284 строки), `bible/prototypes/` (6 скриптов, ~590 строк), `tests/test_drawthings_client.py` (315 строк), MCP-опция `"drawthings"` в `mcp-server/index.js`, `provider_router` |
+| Hermes skills | **сломано** — `draw-things-comic` (ходит на `localhost:7860`), `draw-things-icons` (зовёт `mcp__draw_things__*`, инструмента больше нет) + 5 skill'ов, ссылающихся на них |
+
+Сразу выяснилось, что ComfyUI на машине **уже был настроен** и работал
+(0.42.5, порт 8189, FLUX dev Q4 GGUF, 4 LoRA, готовые workflow'и) — переход
+свёлся не к «поднимать с нуля», а к «переписать точки вызова».
+
+**Сделано**: 3 новых Hermes-skill'а (`comfyui-local`, `comfyui-comic`,
+`comfyui-icons`), 7 обновлённых, правки в `capcut-studio` (реестр, тест,
+proposal) и PR #3 смержен.
+
+**Измеренное открытие** (ломает инструкцию, унаследованную от SDXL):
+в img2img FLUX **игнорирует style-only промпты**. `denoise 0.40` — субъект
+сохранён, стиля нет; `denoise 0.70` — субъект перерисован полностью, стиля
+всё равно нет. Стиль даёт **только LoRA**: проверено
+`--lora super-panavision-70 … --lora-strength 0.8 --denoise 0.45` →
+плёночный look при полностью сохранённом персонаже.
+
+**Попутно починен баг**: `comic-book-pipeline/SKILL.md` имел сломанный YAML
+(`description` с `:` без кавычек) — skill вообще не грузился.
+
+**Tests**: `pytest tests/ -q` в capcut-studio → 161/161 passed.
+
+**Audit + Tasks**: `summary/audit/029_draw-things-removed-comfyui-migration.md`,
+`summary/tasks/029_draw-things-removed-comfyui-migration.md`.
+
+## 2026-10-26T13:09Z — Audit 030: план безопасного удаления FreeVideo (отложен)
+
+**Контекст**: FreeVideo тянет **21 ГБ весов Edge-модели** на системный диск.
+Пользователь: «Надо посмотреть как правильно удалять. Чтобы ничего не сломать»,
+затем — «Я через час буду рядом с компом. Тогда и удалим. А пока запиши в аудите».
+
+**FreeVideo — не отдельное приложение, а custom node ComfyUI.** Штатного
+`uninstall` нет (CLI: setup/test/doctor/generate/…, удаления нет) — удалять
+вручную, по частям.
+
+**Обследовано полностью:**
+
+| Что | Результат |
+|---|---|
+| `~/FreeVideo/` | 23 G (из них 21 G — один каталог `prepared/edge-*/int8-convrot/`) |
+| `custom_nodes/FreeVideo/` | 76 M — код плагина |
+| `models/h3-base/` + `qwen3vl_32b_*.safetensors` + `stage-dmd-step-250/` + `sampling-cache/` | 27.5 G — модели FreeVideo |
+| **Вне своих папок** | **только** launch-команда сервера (`FREEVIDEO_HOME` + `PYTHONPATH`); репозиторий ComfyUI чист, venv чист, launch-agent'ов нет |
+| Что сломается | 3 тестовых workflow'а `comic-panel-freevideo*.json` (подтверждено пользователем: тесты). `SaveVideo` — ядро ComfyUI, не FreeVideo; `comic-panel-voice.json` и `flux-dev-gguf.json` выживут |
+| Что **не** трогать | FLUX/LoRA/t5xxl/clip_l, `ComfyUI-GGUF`, `ComfyUI-Voicebox` (независим от FreeVideo), `ComfyUI-VideoHelperSuite` |
+
+**План**: 8 шагов с проверкой после каждого, готовые команды — остановка
+сервера → удаление плагина → удаление workflow'ов → удаление `~/FreeVideo` →
+удаление моделей → перезапуск сервера без FreeVideo-переменных → тестовый
+FLUX-рендер → проверка озвучки. Ожидается ~50.6 ГБ освобождения (99 → ~150 GiB).
+
+**Статус: удаление НЕ выполнено** — это план, а не отчёт о сделанном.
+Фактический результат будет в аудите 031+.
+
+**Audit + Tasks**: `summary/audit/030_freevideo-removal-plan.md`,
+`summary/tasks/030_freevideo-removal-plan.md`.
+
+## 2026-10-26T13:32Z — Audit 031: draw-things-mcp заменён на comfyui-mcp
+
+**Контекст**: пользователь заметил — «В глобальном конфиге Antigravity всё ещё
+прописан сервер "draw-things"». Запись нашлась **в трёх живых MCP-конфигах**,
+а не в одном, плюс в ещё двух местах:
+
+| Файл | Что было |
+|---|---|
+| `~/.gemini/config/mcp_config.json` | MCP-сервер `draw-things` |
+| `~/.hermes/config.yaml` | то же |
+| `~/.minimax/mcp.json` | то же + `cwd` (найдено полным свипом, не первым проходом) |
+| `~/.pi/agent/extensions/draw-things.ts` | команда `/draw` + LLM-инструмент `draw` для pi — били прямо в мёртвый `localhost:7860` |
+| `~/.minimax/permission.json` | 3 записи allow-list |
+
+Бэкенд за всеми был мёртв: `curl :7860` (LAN и localhost) → **HTTP 000**.
+
+**Не просто удалили — заменили на рабочий ComfyUI.** Новый проект
+`~/Projects/comfyui-mcp/`: stdio MCP-сервер с тем же контрактом инструментов
+(`generate_image`, `get_options`), чтобы существующие вызовы не сломались.
+pi-расширение переписано на ComfyUI напрямую, переименовано в `comfyui.ts`.
+
+**Маппинг аргументов другой** (и это отражено в описаниях инструментов):
+`cfg_scale` теперь значит FLUX-guidance, а не CFG (3.5 вместо 7.0);
+`model` — файл на один вызов, а не переключение модели в UI; LoRA — нода в
+графе, а не состояние сессии.
+
+**Таймауты подняты в трёх слоях**: FLUX идёт ~16 с/шаг, рендер 1024² = 4–8
+мин — это превышает и 60-секундный дефолт MCP SDK, и 300-секундный дефолт
+Hermes. `mcp_servers.comfyui.timeout: 1800` + `COMFYUI_TIMEOUT: 1800`.
+
+**Два бага, найденных только на живом бэкенде:**
+- `denoise` протекал из `denoising_strength` в txt2img → сэмплер вставал на
+  полпути, на выходе **чистый шум**. Первый прогон отчитался «all checks
+  passed»: вызов успешен, файл настоящий PNG, пиксели — мусор.
+- `/models/unet` отдаёт 404 (ComfyUI-GGUF регистрирует свой алиас
+  `unet_gguf`). Источник истины — enum ноды в `/object_info`.
+
+**Verification**: 4 прогона smoke-теста, реальный txt2img и реальный
+img2img (upload + denoise + LoRA), workflow pi-расширения — все рендеры
+осмотрены глазами, артефактов нет.
+
+**Audit + Tasks**: `summary/audit/031_draw-things-mcp-replaced-by-comfyui-mcp.md`,
+`summary/tasks/031_draw-things-mcp-replaced-by-comfyui-mcp.md`.
