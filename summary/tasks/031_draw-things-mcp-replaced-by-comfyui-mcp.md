@@ -47,7 +47,7 @@ node smoke-img2img.mjs /abs/path/to/image.png
 cd ~/Projects/comfyui-mcp/mcp-server/comfyui && npm install
 ```
 
-**Рендер занимает минуты** (FLUX ~16 с/шаг на M Studio). MCP-вызовы дольше
+**Рендер занимает минуты** (FLUX ~16 с/шаг на Mac Studio). MCP-вызовы дольше
 300 с требуют поднятого `timeout` — в Hermes он уже выставлен на 1800.
 
 ## Env variables

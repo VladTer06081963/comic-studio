@@ -65,7 +65,7 @@ python ~/.hermes/skills/creative/comfyui-local/scripts/comfy_client.py img2img \
   --out ~/Desktop/comfy-out
 ```
 
-**Рендер занимает минуты** (FLUX ~16 с/шаг на M Studio) — запускать в фоне:
+**Рендер занимает минуты** (FLUX ~16 с/шаг на Mac Studio) — запускать в фоне:
 `terminal(background=true, notify=true, timeout=1800)`.
 
 ## Env variables
@@ -95,7 +95,7 @@ python ~/.hermes/skills/creative/comfyui-local/scripts/comfy_client.py img2img \
 ## Связанные
 
 - `summary/audit/026_remove-draw-things-orchestrator.md` — предыдущее удаление half-wired DT-обвязки
-- `summary/audit/027_local-uncensored-stack.md` — DT + LM Studio как локальный стек
+- `summary/audit/027_local-uncensored-stack.md` — DT + LMac Studio как локальный стек
 - `summary/audit/030_freevideo-removal-plan.md` — план удаления FreeVideo (50.6 ГБ)
 - `~/knowledge/ConfyUI/ComfyUI.md` — измеренный гайд по ComfyUI на Mac Studio
 

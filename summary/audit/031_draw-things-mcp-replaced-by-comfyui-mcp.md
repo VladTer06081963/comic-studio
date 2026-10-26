@@ -10,20 +10,28 @@
 Пользователь заметил: «В глобальном конфиге Antigravity всё ещё прописан
 сервер "draw-things"».
 
-Проверка подтвердила — запись была **в трёх местах**, а не в одном:
+Проверка подтвердила — запись была **в пяти местах**, не в трёх. Первый
+проход нашёл два (Antigravity и Hermes), полный свип по домашке вскрыл
+остальные три:
 
 | Файл | Что было |
 |---|---|
 | `~/.gemini/config/mcp_config.json` | MCP-сервер `draw-things` → `~/Projects/draw-things-mcp/mcp-server/draw-things/index.js`, `DRAW_THINGS_URL: http://192.168.50.250:7860` |
 | `~/.hermes/config.yaml` | то же самое в секции `mcp_servers:` |
-| `~/.gemini/antigravity-ide/mcp/draw-things/` | кэш схем инструментов Antigravity IDE (пересоздаётся сам) |
+| `~/.minimax/mcp.json` | то же + `cwd` — реестр MiniMax-оркестратора |
+| `~/.pi/agent/extensions/draw-things.ts` | команда `/draw` + LLM-инструмент `draw` для pi — били прямо в `http://localhost:7860/sdapi/v1/txt2img` |
+| `~/.minimax/permission.json` | 3 записи bash allow-list с путями draw-things-mcp |
 
-Бэкенд за записью мёртв: `curl http://192.168.50.250:7860` и
+Плюс кэш схем инструментов Antigravity IDE
+(`~/.gemini/antigravity-ide/mcp/draw-things/`) — он пересоздаётся сам.
+
+Бэкенд за всеми был мёртв: `curl http://192.168.50.250:7860` и
 `http://127.0.0.1:7860` → **HTTP 000** (соединение не устанавливается).
 Draw Things снят с машины.
 
 Отдельно проверены MCP-конфиги других агентов — `~/.codex/config.toml`,
-`~/.claude.json`, `~/.cursor/mcp.json` — **совпадений нет**.
+`~/.claude.json`, `~/.cursor/mcp.json`, `~/.void-editor/mcp.json`,
+`~/.lmstudio/mcp.json`, `~/.pi/agent/settings.json` — **совпадений нет**.
 
 ## 2. Что сделано
 
@@ -44,7 +52,7 @@ Draw Things снят с машины.
 | `lora` + `lora_weight` | состояние сессии | нода `LoraLoader` в графе |
 | `denoising_strength` | `/sdapi/v1/img2img` | `KSampler.denoise` |
 
-**Таймауты.** FLUX на M Studio идёт ~16 с/шаг → 1024×1024 / 20 шагов = 4–8 минут.
+**Таймауты.** FLUX на Mac Studio идёт ~16 с/шаг → 1024×1024 / 20 шагов = 4–8 минут.
 Это превышает и дефолт MCP SDK (60 с), и дефолт Hermes (300 с). Подняты
 все три слоя:
 
@@ -83,9 +91,9 @@ Draw Things снят с машины.
 `/history` + `/view`. Добавлены параметры `width`, `height`, `steps`,
 `guidance`.
 
-Pi грузит расширения автоиз папки — `~/.pi/agent/settings.json` содержит
-только `"-builtin:mcp"`, список вручную не ведётся, поэтому переименования
-файла достаточно.
+Pi грузит расширения автоматически из папки — `~/.pi/agent/settings.json`
+содержит только `"-builtin:mcp"`, список вручную не ведётся, поэтому
+переименования файла достаточно.
 
 ### 2.4. Whitelist minimax
 
@@ -113,7 +121,7 @@ Pi грузит расширения автоиз папки — `~/.pi/agent/se
 Клиент читает enum и только для папок, которых нет в enum'ах нод,
 добирает папками.
 
-### 2.4. Hermes подхватил сервер сразу
+### 2.6. Hermes подхватил сервер сразу
 
 ```
 2026-10-26 18:11:45 ===== starting MCP server 'comfyui' =====
